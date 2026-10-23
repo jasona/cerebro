@@ -39,6 +39,8 @@ npm run dev            # web
 npm run worker         # background jobs (required with DATABASE_URL)
 ```
 
+The `DATABASE_URL` user is the owner/migration role. The compose user is a superuser. A non-superuser owner needs `BYPASSRLS` (tables force row-level security and no policy targets the owner) and `CREATEROLE` (migrations create `cerebro_app` and grant it to the owner), and a superuser must first run `create extension vector` in the database, since pgvector is not a trusted extension. `db:reset` drops schema `public`, and the extension with it, so it needs a superuser; use `db:migrate` and `db:seed` otherwise.
+
 ## What to try
 
 1. **Library**: `/c/acme`. Shared company library, Department → Team tree, filters, search, My drafts.
@@ -59,8 +61,16 @@ npm run worker         # background jobs (required with DATABASE_URL)
 ```bash
 npm test               # Vitest: domain, security regression, RLS under the runtime role, AI eval, MCP
 npm run typecheck      # tsc --noEmit for every package and app
-npm run test:e2e       # Playwright journeys (uses /usr/bin/chromium and its own .data/pglite-e2e)
+npm run test:e2e       # Playwright journeys on their own .data/pglite-e2e
 ```
+
+Vitest uses in-memory PGlite by default. To run the same suites against a PostgreSQL 17 server with pgvector, set `TEST_DATABASE_URL` to an owner/superuser URL (for example its `postgres` database). Each test database is created from a migrated template and dropped when the test closes it:
+
+```bash
+TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres npx vitest run
+```
+
+Playwright uses `PLAYWRIGHT_CHROMIUM_PATH`, else `/usr/bin/chromium`, else its own Chromium (`npx playwright install chromium`). `E2E_PORT` changes the port (default 3400). With `E2E_EXTERNAL_SERVER=1` it uses a server you started yourself, such as `next dev` and `npm run worker` against `DATABASE_URL`. CI (`.github/workflows/ci.yml`) runs typecheck, Vitest in both modes, the database CLI against PostgreSQL, and Playwright on PGlite and on PostgreSQL with a separate worker.
 
 ## Layout
 
