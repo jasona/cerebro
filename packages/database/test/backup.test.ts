@@ -4,7 +4,7 @@
  * Postgres binaries are available.
  */
 import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -38,6 +38,36 @@ describe("backup and restore (PGlite)", () => {
     const { dir } = await backupDatabase({ url: "", dataDir, objectsDir }, join(root, "kind-backup"));
     await expect(restoreDatabase(dir, { url: "postgres://127.0.0.1:1/none", objectsDir })).rejects.toThrow(/pglite/);
     await expect(backupDatabase({ url: "", dataDir, objectsDir }, dir)).rejects.toThrow(/not empty/);
+  });
+});
+
+describe("backup file safety", () => {
+  it("makes the backup directory private even when it already existed", async () => {
+    const dataDir = join(root, "perm", "data");
+    const objectsDir = join(root, "perm", "objects");
+    const h = await createDatabase({ url: "", dataDir });
+    await migrate(h);
+    await h.close();
+    const out = join(root, "perm-backup");
+    await mkdir(out, { mode: 0o755 });
+    await chmod(out, 0o755);
+    const { dir, manifest } = await backupDatabase({ url: "", dataDir, objectsDir }, out);
+    expect((await stat(dir)).mode & 0o777).toBe(0o700);
+    expect((await stat(join(dir, manifest.database.file))).mode & 0o077).toBe(0);
+    expect((await stat(join(dir, "manifest.json"))).mode & 0o077).toBe(0);
+  });
+
+  it("refuses a manifest that names a database file outside the backup", async () => {
+    const dataDir = join(root, "trav", "data");
+    const objectsDir = join(root, "trav", "objects");
+    const h = await createDatabase({ url: "", dataDir });
+    await migrate(h);
+    await h.close();
+    const { dir, manifest } = await backupDatabase({ url: "", dataDir, objectsDir }, join(root, "trav-backup"));
+    await writeFile(join(dir, "manifest.json"), JSON.stringify({ ...manifest, database: { ...manifest.database, file: "../../outside.tar.gz" } }));
+    await expect(restoreDatabase(dir, { url: "", dataDir, objectsDir })).rejects.toThrow(/database file/);
+    // Nothing was moved aside: the refusal happens before the target is touched.
+    expect(existsSync(dataDir)).toBe(true);
   });
 });
 

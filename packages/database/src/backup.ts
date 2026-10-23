@@ -22,7 +22,7 @@
  */
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { cp, mkdir, readdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, readdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import type { PGlite } from "@electric-sql/pglite";
@@ -145,6 +145,8 @@ export async function backupDatabase(target: BackupTarget = {}, outDir?: string)
   const dir = resolve(outDir ?? join(defaultBackupRoot(), stamp()));
   if (existsSync(dir) && (await readdir(dir)).length) throw new Error(`backup directory is not empty: ${dir}`);
   await mkdir(dir, { recursive: true, mode: 0o700 });
+  // A backup holds every tenant's data: keep it private even if the directory already existed.
+  await chmod(dir, 0o700);
 
   let file: string;
   let migrations: string[];
@@ -164,6 +166,7 @@ export async function backupDatabase(target: BackupTarget = {}, outDir?: string)
     file = PGDUMP_FILE;
     migrations = await appliedMigrationsPg(t.url);
     await runPgTool(t.pgBinDir, "pg_dump", t.url, ["--format=custom", "--no-owner", `--file=${join(dir, file)}`]);
+    await chmod(join(dir, file), 0o600);
   }
 
   if (existsSync(t.objectsDir)) await cp(t.objectsDir, join(dir, OBJECTS_DIR), { recursive: true });
@@ -183,6 +186,9 @@ export async function backupDatabase(target: BackupTarget = {}, outDir?: string)
 export async function readBackupManifest(dir: string): Promise<BackupManifest> {
   const m = JSON.parse(await readFile(join(dir, "manifest.json"), "utf8")) as BackupManifest;
   if (m.formatVersion !== BACKUP_FORMAT_VERSION) throw new Error(`unsupported backup format version ${m.formatVersion}`);
+  // The file name is fixed per kind; never follow a manifest outside the backup directory.
+  const expected = m.database?.kind === "pglite" ? PGLITE_FILE : m.database?.kind === "postgres" ? PGDUMP_FILE : null;
+  if (!expected || m.database.file !== expected) throw new Error("backup manifest names an unexpected database file");
   return m;
 }
 
