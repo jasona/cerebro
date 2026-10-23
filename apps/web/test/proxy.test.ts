@@ -40,6 +40,15 @@ describe("proxy (AUTH_MODE=clerk)", () => {
     expect(clerk.clerkMiddleware).not.toHaveBeenCalled();
   });
 
+  it("does not load Clerk for the health and readiness probes", async () => {
+    process.env = { ...saved, AUTH_MODE: "clerk", APP_URL: "https://cerebro.example" };
+    await runProxy("/api/health");
+    await runProxy("/api/ready");
+    expect(clerk.clerkMiddleware).not.toHaveBeenCalled();
+    await runProxy("/api/healthz");
+    expect(clerk.clerkMiddleware).toHaveBeenCalledTimes(1);
+  });
+
   it("is a pass-through in dev mode", async () => {
     process.env = { ...saved, AUTH_MODE: "dev", NODE_ENV: "test" };
     await runProxy();

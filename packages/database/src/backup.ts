@@ -13,7 +13,9 @@
  * backing up or restoring it. Restoring never deletes the current PGlite data
  * directory or object directory; they are moved aside to
  * `<dir>.pre-restore-<timestamp>`. Restoring Postgres uses
- * `pg_restore --clean --if-exists` into the target database.
+ * `pg_restore --clean --if-exists` into the target database; when the target
+ * already has the `vector` extension it is left in place, so the
+ * non-superuser owner role (`db:provision`) can restore.
  *
  * Postgres tools come from `PG_BIN_DIR` when set, else from PATH. Backup
  * scheduling, encryption at rest, off-site copies and retention of backups
@@ -22,7 +24,8 @@
  */
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { chmod, cp, mkdir, readdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import type { PGlite } from "@electric-sql/pglite";
@@ -200,6 +203,24 @@ async function moveAside(dir: string): Promise<string | null> {
   return aside;
 }
 
+/** The archive's table of contents (`pg_restore --list`); reads the file only, no connection. */
+async function pgRestoreList(binDir: string | undefined, file: string): Promise<string> {
+  try {
+    return (await run(pgTool(binDir, "pg_restore"), ["--list", file], { maxBuffer: 64 * 1024 * 1024 })).stdout;
+  } catch (err) {
+    const code = (err as { code?: unknown }).code;
+    throw new Error(`pg_restore --list failed${typeof code === "number" ? ` (${code})` : ""}`);
+  }
+}
+
+/** Comment out extension entries (`EXTENSION - vector`, `COMMENT - EXTENSION vector`) of a TOC list. */
+export function withoutExtensionEntries(list: string): string {
+  return list
+    .split("\n")
+    .map((line) => (/^\d+;\s+\d+\s+\d+\s+(?:EXTENSION|COMMENT\s+-\s+EXTENSION)\s/.test(line) ? `;${line}` : line))
+    .join("\n");
+}
+
 export interface RestoreResult {
   manifest: BackupManifest;
   /** Where the previous PGlite data directory / object directory were moved. */
@@ -231,21 +252,41 @@ export async function restoreDatabase(dir: string, target: BackupTarget = {}): P
     // The runtime role is cluster-wide; grants in the dump need it to exist.
     const client = new pg.Client({ connectionString: t.url });
     await client.connect();
+    let hasVector: boolean;
     try {
       await client.query(
         "do $$ begin if not exists (select 1 from pg_roles where rolname = 'cerebro_app') then create role cerebro_app nologin nobypassrls; end if; end $$",
       );
+      hasVector = ((await client.query("select 1 from pg_extension where extname = 'vector'")).rowCount ?? 0) > 0;
     } finally {
       await client.end();
     }
-    await runPgTool(t.pgBinDir, "pg_restore", t.url, [
-      "--clean",
-      "--if-exists",
-      "--no-owner",
-      "--exit-on-error",
-      "--single-transaction",
-      join(dir, manifest.database.file),
-    ]);
+    const dump = join(dir, manifest.database.file);
+    // When the target already has pgvector (a provisioned database), leave the
+    // extension alone: `--clean` would otherwise drop and recreate it, which
+    // only its owner (a superuser) may do, so the non-superuser owner role
+    // could not restore. Every table is still replaced.
+    let listDir: string | null = null;
+    try {
+      const listArgs: string[] = [];
+      if (hasVector) {
+        listDir = await mkdtemp(join(tmpdir(), "cerebro-restore-"));
+        const list = join(listDir, "toc.list");
+        await writeFile(list, withoutExtensionEntries(await pgRestoreList(t.pgBinDir, dump)), { mode: 0o600 });
+        listArgs.push(`--use-list=${list}`);
+      }
+      await runPgTool(t.pgBinDir, "pg_restore", t.url, [
+        "--clean",
+        "--if-exists",
+        "--no-owner",
+        "--exit-on-error",
+        "--single-transaction",
+        ...listArgs,
+        dump,
+      ]);
+    } finally {
+      if (listDir) await rm(listDir, { recursive: true, force: true });
+    }
   }
 
   movedAside.objectsDir = await moveAside(t.objectsDir);

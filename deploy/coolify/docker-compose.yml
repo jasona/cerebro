@@ -1,0 +1,175 @@
+# Cerebro on Coolify (Docker Compose build pack). Runbook: deploy/coolify/README.md.
+#
+# In Coolify: Base Directory `/deploy/coolify`, Docker Compose Location
+# `/docker-compose.yml`. Coolify runs Compose with `--project-directory` set to
+# the Base Directory, and relative paths resolve from there; with this Base
+# Directory, `context: ../..` is the repository root both in Coolify and with
+# plain `docker compose -f deploy/coolify/docker-compose.yml`.
+# Assign the domain to the `web` service
+# with port 3000 (for example `https://cerebro.example.internal:3000`); no
+# service publishes host ports, Coolify's proxy routes to the container.
+#
+# Start order: postgres (healthy) -> migrate (provision + migrations, must exit
+# 0) -> web and worker. A failed migration stops the deployment before new web
+# or worker containers start.
+#
+# Variables:
+# - `${VAR:?}` is required: Coolify blocks the deployment until it is set.
+# - `${VAR:-}` is optional and empty by default (empty means "off"/default).
+# - `SERVICE_PASSWORD_*` values are generated once by Coolify and kept.
+# Every variable is described in .env.example and the runbook.
+#
+# `exclude_from_hc` is a Coolify key (the one-shot migrate container must not
+# count against the stack's health). Plain `docker compose` does not accept
+# it; CI strips it before running this file.
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=${SERVICE_PASSWORD_POSTGRES}
+      - POSTGRES_DB=postgres
+    volumes:
+      - cerebro-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # One-shot: db:provision (superuser creates the owner role with CREATEROLE
+  # and BYPASSRLS, the `cerebro` database and the vector extension), then
+  # db:migrate as that owner. Idempotent; runs on every deployment.
+  migrate:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/worker.Dockerfile
+    command: ["sh", "deploy/docker/migrate.sh"]
+    restart: "no"
+    exclude_from_hc: true
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgres://cerebro:${SERVICE_PASSWORD_CEREBRODB}@postgres:5432/cerebro
+      - DATABASE_ADMIN_URL=postgres://postgres:${SERVICE_PASSWORD_POSTGRES}@postgres:5432/postgres
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/web.Dockerfile
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - AUTH_MODE=clerk
+      - APP_URL=${APP_URL:?}
+      - DATABASE_URL=postgres://cerebro:${SERVICE_PASSWORD_CEREBRODB}@postgres:5432/cerebro
+      - SESSION_SECRET=${SERVICE_PASSWORD_64_SESSION}
+      - ENGAGEMENT_PSEUDONYM_SECRET=${SERVICE_PASSWORD_64_PSEUDONYM}
+      - READINESS_TOKEN=${SERVICE_PASSWORD_READINESS}
+      # Clerk (D08, D13). Read at runtime by the server; no build variable needed.
+      - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:?}
+      - CLERK_SECRET_KEY=${CLERK_SECRET_KEY:?}
+      # MCP OAuth resource server: the authorization server's exact issuer. Empty = OAuth off.
+      - CEREBRO_OAUTH_ISSUER=${CEREBRO_OAUTH_ISSUER:-}
+      - CEREBRO_OAUTH_JWKS_URL=${CEREBRO_OAUTH_JWKS_URL:-}
+      # Source object storage: an S3-compatible service you run (private bucket).
+      - CEREBRO_OBJECT_STORE=s3
+      - CEREBRO_S3_ENDPOINT=${CEREBRO_S3_ENDPOINT:?}
+      - CEREBRO_S3_REGION=${CEREBRO_S3_REGION:?}
+      - CEREBRO_S3_BUCKET=${CEREBRO_S3_BUCKET:?}
+      - CEREBRO_S3_FORCE_PATH_STYLE=${CEREBRO_S3_FORCE_PATH_STYLE:-false}
+      - CEREBRO_S3_PREFIX=${CEREBRO_S3_PREFIX:-}
+      - CEREBRO_S3_SSE=${CEREBRO_S3_SSE:-}
+      - CEREBRO_S3_SSE_KMS_KEY_ID=${CEREBRO_S3_SSE_KMS_KEY_ID:-}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:?}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:?}
+      # AI provider (packages/ai/README.md). Default: deterministic, no model calls.
+      - CEREBRO_AI_PROVIDER=${CEREBRO_AI_PROVIDER:-}
+      - CEREBRO_AI_PROVIDER_ID=${CEREBRO_AI_PROVIDER_ID:-}
+      - CEREBRO_AI_SDK_MODULE=${CEREBRO_AI_SDK_MODULE:-}
+      - CEREBRO_AI_SDK_EXPORT=${CEREBRO_AI_SDK_EXPORT:-}
+      - CEREBRO_AI_MODEL=${CEREBRO_AI_MODEL:-}
+      - CEREBRO_EMBEDDINGS=${CEREBRO_EMBEDDINGS:-}
+      - CEREBRO_AI_EMBEDDING_MODEL=${CEREBRO_AI_EMBEDDING_MODEL:-}
+      - CEREBRO_AI_EMBEDDING_DIMENSIONS=${CEREBRO_AI_EMBEDDING_DIMENSIONS:-}
+      - CEREBRO_RETRIEVAL_MODE=${CEREBRO_RETRIEVAL_MODE:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      # Limits: all off unless set (`<max>/<windowSeconds>` or `off`); nothing is agreed.
+      - RATE_LIMIT_MCP_TOOL_PER_USER=${RATE_LIMIT_MCP_TOOL_PER_USER:-}
+      - RATE_LIMIT_MCP_TOOL_PER_CONNECTION=${RATE_LIMIT_MCP_TOOL_PER_CONNECTION:-}
+      - RATE_LIMIT_QA_PER_USER=${RATE_LIMIT_QA_PER_USER:-}
+      - RATE_LIMIT_QA_PER_CONNECTION=${RATE_LIMIT_QA_PER_CONNECTION:-}
+      - RATE_LIMIT_UPLOAD_PER_USER=${RATE_LIMIT_UPLOAD_PER_USER:-}
+      - RATE_LIMIT_UPLOAD_PER_CONNECTION=${RATE_LIMIT_UPLOAD_PER_CONNECTION:-}
+      - AI_USAGE_LIMIT_RUNS=${AI_USAGE_LIMIT_RUNS:-}
+      - AI_USAGE_LIMIT_TOKENS=${AI_USAGE_LIMIT_TOKENS:-}
+      - READY_MAX_QUEUED_AGE_SECONDS=${READY_MAX_QUEUED_AGE_SECONDS:-}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  # Background jobs: indexing, embeddings, extraction and OCR, topic summaries,
+  # retention sweeps (only when RETENTION_SWEEP_INTERVAL_SECONDS is set). Also
+  # the container for scheduled tasks (db:backup, retention:sweep).
+  worker:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/worker.Dockerfile
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgres://cerebro:${SERVICE_PASSWORD_CEREBRODB}@postgres:5432/cerebro
+      - SESSION_SECRET=${SERVICE_PASSWORD_64_SESSION}
+      - ENGAGEMENT_PSEUDONYM_SECRET=${SERVICE_PASSWORD_64_PSEUDONYM}
+      - CEREBRO_OBJECT_STORE=s3
+      - CEREBRO_S3_ENDPOINT=${CEREBRO_S3_ENDPOINT:?}
+      - CEREBRO_S3_REGION=${CEREBRO_S3_REGION:?}
+      - CEREBRO_S3_BUCKET=${CEREBRO_S3_BUCKET:?}
+      - CEREBRO_S3_FORCE_PATH_STYLE=${CEREBRO_S3_FORCE_PATH_STYLE:-false}
+      - CEREBRO_S3_PREFIX=${CEREBRO_S3_PREFIX:-}
+      - CEREBRO_S3_SSE=${CEREBRO_S3_SSE:-}
+      - CEREBRO_S3_SSE_KMS_KEY_ID=${CEREBRO_S3_SSE_KMS_KEY_ID:-}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:?}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:?}
+      - CEREBRO_AI_PROVIDER=${CEREBRO_AI_PROVIDER:-}
+      - CEREBRO_AI_PROVIDER_ID=${CEREBRO_AI_PROVIDER_ID:-}
+      - CEREBRO_AI_SDK_MODULE=${CEREBRO_AI_SDK_MODULE:-}
+      - CEREBRO_AI_SDK_EXPORT=${CEREBRO_AI_SDK_EXPORT:-}
+      - CEREBRO_AI_MODEL=${CEREBRO_AI_MODEL:-}
+      - CEREBRO_EMBEDDINGS=${CEREBRO_EMBEDDINGS:-}
+      - CEREBRO_AI_EMBEDDING_MODEL=${CEREBRO_AI_EMBEDDING_MODEL:-}
+      - CEREBRO_AI_EMBEDDING_DIMENSIONS=${CEREBRO_AI_EMBEDDING_DIMENSIONS:-}
+      - CEREBRO_RETRIEVAL_MODE=${CEREBRO_RETRIEVAL_MODE:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - AI_USAGE_LIMIT_RUNS=${AI_USAGE_LIMIT_RUNS:-}
+      - AI_USAGE_LIMIT_TOKENS=${AI_USAGE_LIMIT_TOKENS:-}
+      - CEREBRO_OCR=${CEREBRO_OCR:-}
+      - CEREBRO_OCR_LANGUAGES=${CEREBRO_OCR_LANGUAGES:-}
+      - RETENTION_SWEEP_INTERVAL_SECONDS=${RETENTION_SWEEP_INTERVAL_SECONDS:-}
+      - CEREBRO_BACKUP_DIR=/backups
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    volumes:
+      - cerebro-backups:/backups
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  cerebro-postgres: {}
+  cerebro-backups: {}
