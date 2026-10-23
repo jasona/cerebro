@@ -142,7 +142,9 @@ ChatGPT is a proposed first integration target, not an approved distribution com
 
 The adapter uses `@modelcontextprotocol/sdk` over Streamable HTTP, served from a Next.js route at `/api/mcp` (T21).
 
-An optional embedded MCP Apps interface for preview, destination/audience display, and publishing is deferred (T14). Until then, every client receives the text-only fallback: a structured summary and an authenticated preview link to the first-party preview, where evidence toggles and publication are available. It does not receive a false claim that the entire visual workflow can run inline.
+Every client receives the text-only fallback: a structured summary and an authenticated preview link to the first-party preview, where evidence toggles and publication are available. It does not receive a false claim that the entire visual workflow can run inline.
+
+Hosts that support MCP Apps (extension `io.modelcontextprotocol/ui`, spec 2026-01-26) also get an inline preview (T14, W3.1). `preview_brief` and `publish_brief` link to the `ui://cerebro/brief-preview-v1.html` resource (`text/html;profile=mcp-app`). It is a self-contained document with no network access, and it renders the server-bound preview: title, position, request, home, audience in plain language, evidence counts and sections. Its Publish control asks for confirmation, then calls `publish_brief` through the host with only the server-issued `preview_id`. The preview binding stays the security boundary: a stale preview is refused exactly as it is for the model, and the view offers to preview again. Evidence decisions and audience changes still happen in Cerebro or through `update_brief_draft`. The stateless endpoint cannot see client capabilities when tools are listed, so it always advertises the UI metadata. The spec has hosts without the extension ignore that metadata, and the text result is unchanged. Details are in `packages/integrations/README.md`. The view has not yet been verified in a production host.
 
 Other MCP hosts require their own capability and permission tests. Do not infer universal compatibility from the protocol alone. Prefer capability detection to hard-coded assumptions about a host name.
 
@@ -172,3 +174,5 @@ Official OpenAI documentation reviewed on 2026-10-22 establishes the ChatGPT int
 - [MCP server tools](https://developers.openai.com/plugins/build/mcp-server).
 - [Embedded MCP Apps UI](https://developers.openai.com/plugins/build/chatgpt-ui).
 - [Authenticated MCP integrations](https://developers.openai.com/plugins/build/auth).
+
+The inline preview was built against the MCP Apps extension specification, stable version 2026-01-26 (SEP-1865), reviewed on 2026-10-23: [`ext-apps/specification/2026-01-26/apps.mdx`](https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx). It uses the `@modelcontextprotocol/ext-apps` 1.7.x server helpers.

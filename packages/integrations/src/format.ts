@@ -1,5 +1,30 @@
 /** Text fallbacks (T21): structured summaries for hosts without embedded UI. */
+import type { PublishedBriefingDocument } from "@cerebro/briefing-schema";
+import { formatDate } from "@cerebro/briefing-renderer/format";
+import { KIND_LABEL, REQUEST_LABEL } from "@cerebro/briefing-renderer/labels";
+import { richTextToPlain } from "@cerebro/briefing-renderer/rich-text";
 import type { AudienceDTO, CreatePreviewResult, DraftEvidenceDTO, HomeDTO } from "@cerebro/domain";
+
+/**
+ * The lead of the previewed document in plain language, with the shared
+ * renderer's labels, for the MCP Apps inline preview (T14). Plain text only:
+ * the UI writes it with `textContent`.
+ */
+export function previewFields(doc: PublishedBriefingDocument) {
+  return {
+    kind: doc.kind,
+    kind_label: KIND_LABEL[doc.kind],
+    position: { headline: doc.position.headline, summary: richTextToPlain(doc.position.summary) },
+    request: {
+      type: doc.request.type,
+      label: REQUEST_LABEL[doc.request.type],
+      statement: doc.request.statement,
+      detail: doc.request.detail ? richTextToPlain(doc.request.detail) : null,
+      due_date: doc.request.dueDate ?? null,
+      due_date_label: doc.request.dueDate ? formatDate(doc.request.dueDate) : null,
+    },
+  };
+}
 
 const clip = (s: string, n: number) => {
   const t = s.replace(/\s+/g, " ").trim();

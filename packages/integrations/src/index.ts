@@ -23,3 +23,11 @@ export {
 } from "./oauth";
 export { ALL_SCOPES, MCP_SCOPES, requiredScope, TOOL_SCOPES, type McpScope, type McpToolName } from "./scopes";
 export { toToolError, type ToolErrorCode } from "./results";
+export {
+  clientSupportsMcpApps,
+  MCP_APP_MIME_TYPE,
+  MCP_APPS_EXTENSION_ID,
+  PREVIEW_UI_META,
+  PREVIEW_UI_URI,
+} from "./apps";
+export { MCP_APPS_PROTOCOL_VERSION, PREVIEW_UI_CSP, PREVIEW_UI_HTML } from "./preview-ui";
