@@ -38,7 +38,8 @@ export function devConnectionTokensAllowed(env: Record<string, string | undefine
   return env.NODE_ENV !== "production" || env.CEREBRO_ALLOW_DEV_CONNECTION_TOKENS === "1";
 }
 
-const quote = (s: string) => s.replace(/["\\]/g, "'");
+/** Safe inside a quoted header parameter: no quotes, backslashes or non-ASCII (headers are ByteStrings). */
+const quote = (s: string) => s.replace(/["\\]/g, "'").replace(/[^\x20-\x7e]/g, "?");
 
 /** `WWW-Authenticate` value: realm, optional error, and (when OAuth is on) resource metadata and scopes. */
 export function bearerChallenge(opts: {
@@ -131,7 +132,12 @@ export async function authenticateMcpRequest(db: Database, request: Request, opt
 
   const verified = await verifyAccessToken(token, oauth, opts.oauth);
   if (!verified.ok) {
-    const message = verified.reason === "expired" ? "The access token has expired." : "Invalid access token.";
+    const message =
+      verified.reason === "expired"
+        ? "The access token has expired."
+        : verified.reason === "opaque"
+          ? "Invalid access token: only JWT access tokens are accepted."
+          : "Invalid access token.";
     return { ok: false, response: unauthorizedResponse(message, "invalid_token", oauth) };
   }
   const t = verified.token;
@@ -142,6 +148,7 @@ export async function authenticateMcpRequest(db: Database, request: Request, opt
       clientId: t.clientId,
       scopes: [...t.scopes],
       authTime: t.authTime,
+      issuedAt: t.issuedAt,
     });
     return { ok: true, ctx, scopes: t.scopes, oauth };
   } catch (e) {

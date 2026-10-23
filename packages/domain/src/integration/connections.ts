@@ -126,6 +126,64 @@ export async function revokeConnectionInTx(tx: Tx, ctx: RequestContext, input: {
 export const revokeConnection = (db: Database, ctx: RequestContext, input: { connectionId: string }) =>
   withCtx(db, ctx, (tx, c) => revokeConnectionInTx(tx, c, input));
 
+export async function reconnectOAuthConnectionInTx(tx: Tx, ctx: RequestContext, input: { connectionId: string }): Promise<ConnectionDTO> {
+  const { connectionId } = parseInput(RevokeInput, input);
+  if (ctx.via === "mcp") throw new DomainError("forbidden", "Connections are reconnected in Settings.");
+  await requireMember(tx, ctx);
+  const existing = (
+    await tx.execute<ConnRow & { issuer: string | null }>(sql`
+      select ${COLS}, issuer from integration_connections
+      where organization_id = ${ctx.organizationId}::uuid and user_id = ${ctx.userId}::uuid and id = ${connectionId}::uuid
+      for update`)
+  ).rows[0];
+  if (!existing) throw new DomainError("not_found", "Connection not found.");
+  if (existing.kind !== "oauth") {
+    throw new DomainError("validation", "Development connection tokens cannot be reconnected. Create a new token instead.");
+  }
+  if (existing.status === "active") return toConnection(existing);
+  const row = (
+    await tx.execute<ConnRow>(sql`
+      update integration_connections
+        set status = 'active', revoked_at = null, not_before = null, issued_after = now(), updated_at = now()
+      where organization_id = ${ctx.organizationId}::uuid and id = ${connectionId}::uuid
+      returning ${COLS}`)
+  ).rows[0]!;
+  await recordAudit(tx, ctx, {
+    action: "connection.reconnected",
+    targetType: "integration_connection",
+    targetId: connectionId,
+    metadata: { kind: "oauth", clientId: existing.client_id },
+  });
+  return toConnection(row);
+}
+
+/**
+ * Reconnect one of the current user's revoked OAuth connections (D13).
+ *
+ * The explicit, audited way back after a revocation when the authorization
+ * server sends no `auth_time` (Clerk), so a fresh authorization cannot be
+ * recognized from the token. Only access tokens issued after this call are
+ * accepted; every token issued earlier stays refused until it expires. The
+ * host's existing refresh token, if any, is trusted again, which is what the
+ * user is choosing here: to cut off a host for good, leave the connection
+ * revoked (and remove the client in Clerk).
+ *
+ * Requires active membership, so a connection revoked by membership removal
+ * (D11) comes back only through this explicit action by its owner after
+ * they are re-added. Fails with `conflict` if the same client already has
+ * another active connection in this company.
+ */
+export async function reconnectOAuthConnection(db: Database, ctx: RequestContext, input: { connectionId: string }): Promise<ConnectionDTO> {
+  try {
+    return await withCtx(db, ctx, (tx, c) => reconnectOAuthConnectionInTx(tx, c, input));
+  } catch (err) {
+    if (isUniqueViolation(err)) {
+      throw new DomainError("conflict", "This client already has an active connection. Revoke it first if you want to reconnect this one.");
+    }
+    throw err;
+  }
+}
+
 const unauthenticated = () => new DomainError("unauthenticated", "Invalid or revoked connection token.");
 
 /**
@@ -191,11 +249,13 @@ export const OAuthGrantClaims = z.object({
    * When the user last authenticated at the authorization server (`auth_time`),
    * or null when the token does not say. Refresh does not change it, so it is
    * what distinguishes a fresh authorization from a token refreshed from a
-   * revoked grant.
+   * revoked grant. Clerk access tokens do not carry it (D13).
    */
   authTime: z.date().nullable(),
+  /** When the token was issued (`iat`), or null. Checked against a Settings reconnection. */
+  issuedAt: z.date().nullable().default(null),
 });
-export type OAuthGrantClaims = z.infer<typeof OAuthGrantClaims>;
+export type OAuthGrantClaims = z.input<typeof OAuthGrantClaims>;
 
 interface OAuthConnRow extends Record<string, unknown> {
   id: string;
@@ -203,6 +263,7 @@ interface OAuthConnRow extends Record<string, unknown> {
   status: "active" | "revoked";
   revoked_at: unknown;
   not_before: unknown;
+  issued_after: unknown;
 }
 
 const oauthRefused = (message: string, reason: string) => new DomainError("unauthenticated", message, { reason });
@@ -216,6 +277,11 @@ const oauthRefused = (message: string, reason: string) => new DomainError("unaut
  *   per company, user, issuer and client, so Settings lists it and
  *   revocation works like connection tokens: a revoked grant refuses every
  *   token until the user authorizes again (a later `auth_time`).
+ * - Without `auth_time` (Clerk, D13) a fresh authorization cannot be told
+ *   apart from a refresh of the revoked grant, so the revoked grant stays
+ *   refused (fail-closed) until the user reconnects it from Settings
+ *   (`reconnectOAuthConnection`). After that, only tokens issued (`iat`)
+ *   after the reconnection are accepted.
  * - A connection is bound to one company. On first use it binds to the user's
  *   only active company; users in several companies are refused
  *   (`company_selection_required`) until a company-selection step exists.
@@ -240,7 +306,7 @@ export async function authenticateOAuthGrant(db: Database, claims: OAuthGrantCla
     ).rows.map((r) => r.organization_id);
     const conns = (
       await tx.execute<OAuthConnRow>(sql`
-        select id, organization_id, status, revoked_at, not_before from integration_connections
+        select id, organization_id, status, revoked_at, not_before, issued_after from integration_connections
         where kind = 'oauth' and user_id = ${user.user_id}::uuid and issuer = ${c.issuer} and client_id = ${c.clientId}
         order by created_at desc, id`)
     ).rows;
@@ -260,6 +326,9 @@ export async function authenticateOAuthGrant(db: Database, claims: OAuthGrantCla
     if (conn.not_before !== null && !authAfter(conn.not_before)) {
       throw oauthRefused("This connection was revoked. Reconnect Cerebro.", "revoked");
     }
+    if (conn.issued_after !== null && !(c.issuedAt !== null && c.issuedAt > toDate(conn.issued_after))) {
+      throw oauthRefused("This access token was issued before the connection was reconnected. Sign in again from your LLM host.", "revoked");
+    }
     return touchConnection(db, userId, conn.organization_id, conn.id, c.scopes);
   }
 
@@ -271,7 +340,12 @@ export async function authenticateOAuthGrant(db: Database, claims: OAuthGrantCla
   const organizationId = orgs[0]!;
   const revoked = conns.find((r) => r.organization_id === organizationId && r.status === "revoked");
   if (revoked && !authAfter(revoked.revoked_at)) {
-    throw oauthRefused("This connection was revoked. Reconnect Cerebro.", "revoked");
+    throw oauthRefused(
+      c.authTime === null
+        ? "This connection was revoked. Reconnect it in Cerebro under Settings > Connections."
+        : "This connection was revoked. Reconnect Cerebro.",
+      "revoked",
+    );
   }
 
   const ctx: RequestContext = { userId, organizationId, via: "mcp", requestId: randomUUID() };

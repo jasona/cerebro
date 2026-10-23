@@ -1,6 +1,6 @@
 /**
  * MCP as an OAuth 2.1 protected resource (W2.2). A local JWKS stands in for
- * the authorization server, which is deliberately not chosen here; Cerebro
+ * the authorization server (Clerk-specific token shapes are in oauth-clerk.test.ts); Cerebro
  * only verifies tokens and maps them to users and revocable grants.
  */
 import { listConnections, revokeConnection } from "@cerebro/domain";
@@ -352,7 +352,7 @@ describe("grants and revocation", () => {
     const [conn] = await oauthConnections();
     await revokeConnection(w.h.db, w.ctx("maya"), { connectionId: conn!.id });
     const noAuthTime = await new SignJWT({ scope: ALL, client_id: "host-a" })
-      .setProtectedHeader({ alg: "ES256", kid: "k1" })
+      .setProtectedHeader({ alg: "ES256", kid: "k1", typ: "at+jwt" })
       .setIssuer(ISSUER)
       .setAudience(MCP_URL)
       .setSubject("sub-maya")

@@ -276,6 +276,8 @@ export const integrationConnections = pgTable(
     issuer: text("issuer"),
     /** OAuth connections: tokens authenticated at or before this instant are refused (0006). */
     notBefore: ts("not_before"),
+    /** OAuth connections reconnected in Settings: tokens issued (`iat`) at or before this instant are refused (0010). */
+    issuedAfter: ts("issued_after"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

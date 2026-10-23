@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createConnectionToken, revokeConnection, setAuthoringPreferences } from "@cerebro/domain";
+import { createConnectionToken, reconnectOAuthConnection, revokeConnection, setAuthoringPreferences } from "@cerebro/domain";
 import type { ActionState } from "@/lib/action-state";
 import { getRequestContext } from "@/lib/context";
 import { appUrl } from "@/lib/env";
@@ -35,6 +35,16 @@ export async function revokeConnectionAction(_: ActionState, fd: FormData): Prom
     await revokeConnection(db, ctx, { connectionId: field(fd, "connectionId") });
     revalidatePath(paths.settings(company));
     return { status: "ok", message: "Connection revoked. Its token stops working immediately." };
+  });
+}
+
+export async function reconnectConnectionAction(_: ActionState, fd: FormData): Promise<ActionState> {
+  return runAction(async () => {
+    const company = field(fd, "company");
+    const { db, ctx } = await getRequestContext(company);
+    await reconnectOAuthConnection(db, ctx, { connectionId: field(fd, "connectionId") });
+    revalidatePath(paths.settings(company));
+    return { status: "ok", message: "Connection reconnected. Access tokens issued before now stay refused." };
   });
 }
 
