@@ -15,6 +15,12 @@ import { createHash } from "node:crypto";
 export interface SourceStore {
   put(organizationId: string, bytes: Uint8Array): Promise<{ key: string; sha256: string }>;
   get(organizationId: string, key: string): Promise<Uint8Array>;
+  /**
+   * Permanently remove an object (source deletion and retention). Deleting a
+   * missing object succeeds. Keys are content-addressed per organization, so
+   * callers delete a key only once no source row references it.
+   */
+  delete(organizationId: string, key: string): Promise<void>;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

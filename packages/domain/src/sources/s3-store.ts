@@ -1,4 +1,4 @@
-import { GetObjectCommand, PutObjectCommand, S3Client, type ServerSideEncryption } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client, type ServerSideEncryption } from "@aws-sdk/client-s3";
 import { parseSourceKey, sourceKeyFor, verifySourceBytes, type SourceStore } from "./object-key";
 
 /**
@@ -178,5 +178,11 @@ export class S3SourceStore implements SourceStore {
       throw err;
     }
     return verifySourceBytes(parsed, bytes);
+  }
+
+  async delete(organizationId: string, key: string): Promise<void> {
+    const parsed = parseSourceKey(key, organizationId);
+    // S3 DeleteObject succeeds for a missing key, matching the local store.
+    await this.client.send(new DeleteObjectCommand({ Bucket: this.config.bucket, Key: this.objectKey(parsed.key) }));
   }
 }

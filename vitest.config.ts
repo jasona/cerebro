@@ -7,5 +7,7 @@ export default defineConfig({
     testTimeout: 60_000,
     hookTimeout: 60_000,
     pool: "forks",
+    // Structured operational logs (domain ops/log.ts) are muted in tests; log tests set their own level and sink.
+    env: { LOG_LEVEL: "silent" },
   },
 });

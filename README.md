@@ -67,6 +67,49 @@ TEST_S3_ENDPOINT=http://127.0.0.1:9100 TEST_S3_ACCESS_KEY_ID=… TEST_S3_SECRET_
 
    Ask your LLM: "Turn this into a Cerebro brief for the Platform team. Make it visible to the company." The tools create a private draft, show a preview with home and audience, and publish only when you explicitly ask. See [`packages/integrations/README.md`](packages/integrations/README.md). ChatGPT needs OAuth and a public URL, so it cannot connect with dev tokens.
 
+## Operations
+
+Nothing here sets a pilot target: no limits, retention periods, cost caps or latency targets have been agreed (P11, P12). Every limit below is **off unless you set it**.
+
+### Backup and restore
+
+```bash
+npm run db:backup                         # → .data/backups/<timestamp> (or --out <dir>, or CEREBRO_BACKUP_DIR)
+npm run db:restore -- <backup dir> --yes  # restore database + object store
+```
+
+A backup directory holds `manifest.json` (time, database kind, applied migrations, object count; no content), the database (`database.pglite.tar.gz` from PGlite's `dumpDataDir`, or `database.pgdump` from `pg_dump --format=custom`) and a copy of the private object store (`.data/objects` or `CEREBRO_OBJECTS_DIR`). Under PGlite, stop `npm run dev` first. A PGlite restore moves the current data and object directories aside to `<dir>.pre-restore-<timestamp>` rather than deleting them; a Postgres restore runs `pg_restore --clean --if-exists` into `DATABASE_URL`. Postgres tools come from `PG_BIN_DIR` if set, else `PATH`. Scheduling, encryption and off-site copies depend on the undecided hosting choice (T10) and are not automated here. Tests: `packages/database/test/backup.test.ts` (PGlite) and `packages/domain/test/postgres.test.ts` (Postgres, runs when the binaries are available).
+
+### Retention and deletion
+
+Per-organization retention lives in `retention_policies` (categories `sources`, `conversations`, `events`). With no period set — the default — nothing is ever deleted. When a period is set, the `apply_retention` job deletes expired data and everything derived from it (source objects, chunks and embeddings, links and draft-side candidate evidence; Q&A messages and citations), and audits the counts. Published revisions, their approved evidence, submitted feedback and audit events are not deleted by this mechanism. Sweeps are scheduled only when `RETENTION_SWEEP_INTERVAL_SECONDS` is set; `npm run retention:sweep` applies the policies once. Authors (and owners/admins, as the privileged erasure path) can hard-delete a source with `deleteSource`.
+
+### Monitoring
+
+- `GET /api/health` — liveness; never touches the database.
+- `GET /api/ready` — 200/503 on database reachability, current migrations, job queue (depth, oldest pending age) and valid limit configuration. Full details only with `Authorization: Bearer $READINESS_TOKEN`; everyone else gets the status and failing check names.
+- Structured JSON logs (one object per line) from the job runner, MCP adapter, AI runs, rate limiter and retention. Fields pass a redaction allowlist, so source text, prompts, questions and answers cannot be logged. `LOG_LEVEL` = `debug` | `info` (default) | `warn` | `error` | `silent`.
+
+### Limits
+
+| Variable | Meaning (format `<max>/<windowSeconds>`, or `off`) |
+| --- | --- |
+| `RATE_LIMIT_MCP_TOOL_PER_USER`, `RATE_LIMIT_MCP_TOOL_PER_CONNECTION` | MCP tool calls |
+| `RATE_LIMIT_QA_PER_USER`, `RATE_LIMIT_QA_PER_CONNECTION` | Reader questions |
+| `RATE_LIMIT_UPLOAD_PER_USER`, `RATE_LIMIT_UPLOAD_PER_CONNECTION` | Source uploads |
+| `AI_USAGE_LIMIT_RUNS`, `AI_USAGE_LIMIT_TOKENS` | Per-organization AI runs / tokens; an organization's `settings.ai.usageLimits.{runs,tokens}` overrides |
+| `READY_MAX_QUEUED_AGE_SECONDS` | Make `/api/ready` fail when the oldest runnable job is older than this |
+
+Rate limits are fixed-window counters in Postgres (`rate_limit_counters`), shared by every process. Exceeding one returns `rate_limited` with a retry-after (an MCP tool error with `retry_after_seconds`; HTTP 429 mapping in the web app). At an AI usage limit, Q&A answers "unavailable" exactly as during a provider outage and reading is unaffected; topic summaries retry later. AI usage (task, provider, model, latency, tokens when reported; never content) is recorded in `ai_runs` and summarised for owners/admins by `getAiUsageSummary`. The reader Q&A per-briefing hourly cap in `ENGAGEMENT_SETTINGS` predates this and remains a provisional implementation setting.
+
+### Latency measurement
+
+```bash
+npm run perf    # p50/p95 for library list, reader open, Q&A (deterministic), preview, publish on in-memory PGlite
+```
+
+It prints numbers only; there are no agreed targets to compare against.
+
 ## Tests
 
 ```bash

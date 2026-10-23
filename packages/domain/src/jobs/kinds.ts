@@ -1,7 +1,7 @@
 import { enqueueJob, type Executor } from "@cerebro/database";
 import { sql } from "drizzle-orm";
 
-export const JOB_KINDS = ["index_revision", "extract_source", "summarize_topics", "embed_revision"] as const;
+export const JOB_KINDS = ["index_revision", "extract_source", "summarize_topics", "embed_revision", "apply_retention"] as const;
 export type JobKind = (typeof JOB_KINDS)[number];
 
 /** `jobs.dedupe_key` is globally unique, so every key includes the organization id. */
@@ -11,7 +11,7 @@ export const dedupeKeys = {
   embedRevision: (organizationId: string, revisionId: string, model: string) => `embed_revision:${organizationId}:${revisionId}:${model}`,
   extractSource: (organizationId: string, sourceId: string, checksum: string) =>
     `extract_source:${organizationId}:${sourceId}:${checksum}`,
-  summarizeTopics: (organizationId: string, revisionId: string, questionCount: number) =>
+  summarizeTopics: (organizationId: string, revisionId: string, questionCount: number | "below_cohort") =>
     `summarize_topics:${organizationId}:${revisionId}:${questionCount}`,
 };
 

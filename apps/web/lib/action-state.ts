@@ -16,6 +16,8 @@ export interface SafeErrorDetails {
   issues?: { path?: string; message: string }[];
   currentVersion?: number;
   reasons?: string[];
+  /** On `rate_limited`: seconds until another attempt can succeed. */
+  retryAfterSeconds?: number;
 }
 
 export const IDLE: ActionState = { status: "idle" };

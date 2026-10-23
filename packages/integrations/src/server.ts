@@ -27,8 +27,10 @@ import {
 import type { Database } from "@cerebro/database";
 import {
   createBriefingInTx,
+  createLogger,
   createPreview,
   DomainError,
+  enforceRateLimit,
   getAuthorFeedback,
   getAuthoringContext,
   getBriefingMeta,
@@ -48,11 +50,14 @@ import {
   type RequestContext,
 } from "@cerebro/domain";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import { describeAudience, evidenceLines, previewText } from "./format";
 import { guardDocumentEvidence, mergeHandoffIntoDraft } from "./merge";
 import { fail, ok, toToolError } from "./results";
 import { TOOL_SCOPES, type McpScope, type McpToolName } from "./scopes";
+
+const logger = createLogger({ component: "mcp" });
 
 export interface CerebroMcpServerOptions {
   db: Database;
@@ -149,8 +154,39 @@ export function createCerebroMcpServer({ db, ctx, appUrl, scopes }: CerebroMcpSe
     }
   };
 
+  /*
+   * Every tool goes through this wrapper: per-user and per-connection rate
+   * limits (off unless configured) are enforced before the handler runs, and
+   * one structured log line records the tool name, outcome code and latency.
+   * Arguments and results are never logged.
+   */
+  const log = logger.child({ requestId: ctx.requestId, organizationId: ctx.organizationId, userId: ctx.userId, connectionId: ctx.connectionId ?? null });
+  const registerTool = ((name: string, config: unknown, handler: (...args: unknown[]) => Promise<CallToolResult>) =>
+    (server.registerTool.bind(server) as (n: string, c: unknown, h: (...args: unknown[]) => Promise<CallToolResult>) => unknown)(
+      name,
+      config,
+      async (...args: unknown[]) => {
+        const started = performance.now();
+        let result: CallToolResult;
+        try {
+          await enforceRateLimit(db, ctx, "mcp_tool");
+          result = await handler(...args);
+        } catch (e) {
+          result = toToolError(e);
+        }
+        const code = result.isError ? ((result.structuredContent as { error?: { code?: string } } | undefined)?.error?.code ?? "error") : "ok";
+        log[result.isError && code === "unavailable" ? "error" : "info"]("mcp.tool_call", {
+          tool: name,
+          outcome: result.isError ? "error" : "ok",
+          code,
+          latencyMs: Math.round(performance.now() - started),
+        });
+        return result;
+      },
+    )) as unknown as typeof server.registerTool;
+
   // -------------------------------------------------------------------------
-  server.registerTool(
+  registerTool(
     "get_authoring_context",
     {
       title: "Get Cerebro authoring context",
@@ -192,7 +228,7 @@ export function createCerebroMcpServer({ db, ctx, appUrl, scopes }: CerebroMcpSe
   );
 
   // -------------------------------------------------------------------------
-  server.registerTool(
+  registerTool(
     "create_brief_draft",
     {
       title: "Create a private Cerebro brief draft",
@@ -316,7 +352,7 @@ export function createCerebroMcpServer({ db, ctx, appUrl, scopes }: CerebroMcpSe
   }
 
   // -------------------------------------------------------------------------
-  server.registerTool(
+  registerTool(
     "get_operation",
     {
       title: "Get a Cerebro operation",
@@ -341,7 +377,7 @@ export function createCerebroMcpServer({ db, ctx, appUrl, scopes }: CerebroMcpSe
   );
 
   // -------------------------------------------------------------------------
-  server.registerTool(
+  registerTool(
     "find_briefs",
     {
       title: "Find Cerebro briefs",
@@ -394,7 +430,7 @@ export function createCerebroMcpServer({ db, ctx, appUrl, scopes }: CerebroMcpSe
   }
 
   // -------------------------------------------------------------------------
-  server.registerTool(
+  registerTool(
     "get_brief",
     {
       title: "Get a Cerebro brief",
@@ -451,7 +487,7 @@ export function createCerebroMcpServer({ db, ctx, appUrl, scopes }: CerebroMcpSe
   );
 
   // -------------------------------------------------------------------------
-  server.registerTool(
+  registerTool(
     "update_brief_draft",
     {
       title: "Update a Cerebro brief draft",
@@ -554,7 +590,7 @@ export function createCerebroMcpServer({ db, ctx, appUrl, scopes }: CerebroMcpSe
   );
 
   // -------------------------------------------------------------------------
-  server.registerTool(
+  registerTool(
     "preview_brief",
     {
       title: "Preview a Cerebro brief before publishing",
@@ -599,7 +635,7 @@ export function createCerebroMcpServer({ db, ctx, appUrl, scopes }: CerebroMcpSe
   );
 
   // -------------------------------------------------------------------------
-  server.registerTool(
+  registerTool(
     "publish_brief",
     {
       title: "Publish a reviewed Cerebro brief",
@@ -676,7 +712,7 @@ export function createCerebroMcpServer({ db, ctx, appUrl, scopes }: CerebroMcpSe
   );
 
   // -------------------------------------------------------------------------
-  server.registerTool(
+  registerTool(
     "get_author_feedback",
     {
       title: "Get reader feedback for your brief",
@@ -698,7 +734,9 @@ export function createCerebroMcpServer({ db, ctx, appUrl, scopes }: CerebroMcpSe
           briefing_id,
           feedback: f.feedback,
           topics: f.topics,
+          // Null below the cohort threshold (D07): the count itself is suppressed.
           suppressed_question_count: f.suppressedQuestionCount,
+          suppressed_question_count_suppressed: f.suppressedQuestionCountSuppressed,
           disclosure: f.disclosure,
         });
       }),

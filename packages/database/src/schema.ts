@@ -660,11 +660,13 @@ export const revisionEvidence = pgTable(
       columns: [t.organizationId, t.revisionId],
       foreignColumns: [briefingRevisions.organizationId, briefingRevisions.id],
     }),
+    // Migration 0009: `on delete set null (source_id)` — deleting a private
+    // source severs provenance but keeps the published excerpt.
     foreignKey({
       name: "revision_evidence_source_fk",
       columns: [t.organizationId, t.sourceId],
       foreignColumns: [sources.organizationId, sources.id],
-    }),
+    }).onDelete("set null"),
     check("revision_evidence_origin_check", oneOf(t.origin, EVIDENCE_ORIGINS)),
   ],
 );
@@ -1267,6 +1269,59 @@ export const briefingSuggestions = pgTable(
   ],
 );
 
+/**
+ * Fixed-window rate-limit counters (migration 0008). Private to their user
+ * under RLS; limits are configuration, off unless set.
+ */
+export const rateLimitCounters = pgTable(
+  "rate_limit_counters",
+  {
+    id: pk(),
+    organizationId: orgId(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    bucket: text("bucket").notNull(),
+    windowStart: ts("window_start").notNull(),
+    count: integer("count").notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique("rate_limit_counters_org_id_key").on(t.organizationId, t.id),
+    unique("rate_limit_counters_window_key").on(t.organizationId, t.userId, t.bucket, t.windowStart),
+    check("rate_limit_counters_count_check", sql`${t.count} >= 0`),
+    check("rate_limit_counters_bucket_check", sql`${t.bucket} ~ '^[a-z_]{1,32}:(user|connection:[0-9a-f-]{36})$'`),
+  ],
+);
+
+export const RETENTION_CATEGORIES = ["sources", "conversations", "events"] as const;
+export type RetentionCategory = (typeof RETENTION_CATEGORIES)[number];
+
+/**
+ * Per-organization retention policy (migration 0009). No row, or a null
+ * `retainDays`, keeps the category indefinitely. P11 has not set any period.
+ */
+export const retentionPolicies = pgTable(
+  "retention_policies",
+  {
+    id: pk(),
+    organizationId: orgId(),
+    category: text("category").notNull(),
+    retainDays: integer("retain_days"),
+    updatedBy: uuid("updated_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique("retention_policies_org_id_key").on(t.organizationId, t.id),
+    unique("retention_policies_category_key").on(t.organizationId, t.category),
+    check("retention_policies_category_check", oneOf(t.category, RETENTION_CATEGORIES)),
+    check("retention_policies_days_check", sql`${t.retainDays} is null or ${t.retainDays} >= 1`),
+  ],
+);
+
 /** Tables carrying `organization_id` that are subject to tenant RLS. */
 export const TENANT_TABLES = [
   "memberships",
@@ -1301,4 +1356,6 @@ export const TENANT_TABLES = [
   "retrieval_chunks",
   "briefing_reads",
   "briefing_suggestions",
+  "rate_limit_counters",
+  "retention_policies",
 ] as const;

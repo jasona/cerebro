@@ -18,6 +18,7 @@ import { loadDraftRow, parseStoredDraft, updateDraftInTx } from "../briefings/dr
 import { RequestContext } from "../context";
 import { DomainError } from "../errors";
 import { dedupeKeys } from "../jobs/kinds";
+import { enforceRateLimit } from "../ops/rate-limit";
 import { getSourceStore, sha256Hex } from "./store";
 
 // ---------------------------------------------------------------------------
@@ -117,6 +118,7 @@ export async function addSource(db: Database, ctx: RequestContext, raw: AddSourc
     ...(input.filename ? { filename: input.filename } : {}),
   });
   if (!valid.ok) throw new DomainError("validation", valid.error.message, { code: valid.error.code });
+  await enforceRateLimit(db, c, "upload");
 
   return withAuthContext(db, { userId: c.userId, organizationId: c.organizationId, connectionId: c.connectionId }, async (tx) => {
     if (input.briefingId) await assertBriefingCapability(tx, c, input.briefingId, "edit");

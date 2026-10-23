@@ -16,7 +16,8 @@ import { canReadRevision, resolveBriefingAccess } from "../access/index";
 import { RequestContext } from "../context";
 import { DomainError } from "../errors";
 import { isRevisionIndexed } from "../jobs/kinds";
-import { insertAiRun } from "../jobs/summarize-topics";
+import { checkAiUsage, recordAiRun } from "../ops/ai-usage";
+import { enforceRateLimit } from "../ops/rate-limit";
 import { allowedEmbeddings, getAiRuntimeOrNull, resolveOrgAiPolicy, type AiRuntime } from "./ai-runtime";
 import { embedQuestion, retrieveRevisionChunks, type QueryEmbedding, type RetrievedChunk } from "./retrieval";
 import { documentTargets, resolveReadableRevision, type DocumentTargets } from "./revision";
@@ -117,6 +118,7 @@ export async function askQuestion(
   const parsed = AskQuestionInput.safeParse(raw);
   if (!parsed.success) throw new DomainError("validation", "Invalid question.", { issues: parsed.error.issues.map((i) => i.message) });
   const input = parsed.data;
+  await enforceRateLimit(db, c, "qa");
 
   // Hybrid retrieval embeds the question first, outside any transaction, and
   // only with an embedding provider the organization allows. Any failure
@@ -197,7 +199,9 @@ export async function askQuestion(
       generationStatus: "complete",
     });
     const policy = await resolveOrgAiPolicy(tx, c.organizationId);
+    const usage = await checkAiUsage(tx, c.organizationId);
     return {
+      usageLimited: !usage.allowed,
       preparing: false as const,
       threadId: thread.id,
       revisionId: rev.revisionId,
@@ -223,7 +227,9 @@ export async function askQuestion(
   const registry = deps.registry ?? runtime?.registry;
   let output: AnswerOutput | null = null;
   const records: AiRunRecord[] = [];
-  const candidates = registry ? registry.candidates("answer", prep.policy) : [];
+  // Over the organization's AI usage limit, answer exactly as during an
+  // outage (principle 6): no provider call, reading is unaffected.
+  const candidates = registry && !prep.usageLimited ? registry.candidates("answer", prep.policy) : [];
   for (const provider of candidates) {
     const res = await runAnswer(
       provider,
@@ -252,7 +258,7 @@ export async function askQuestion(
       status: "failed",
       latencyMs: 0,
       usage: {},
-      errorCategory: "unavailable",
+      errorCategory: prep.usageLimited ? "usage_limited" : "unavailable",
       revisionId: prep.revisionId,
     });
   }
@@ -287,7 +293,7 @@ export async function askQuestion(
       );
     if (!t) throw new DomainError("not_found", "Conversation not found.");
     let aiRunId: string | null = null;
-    for (const record of records) aiRunId = await insertAiRun(tx, c.organizationId, c.userId, record);
+    for (const record of records) aiRunId = await recordAiRun(tx, c.organizationId, c.userId, record);
     const [msg] = await tx
       .insert(qaMessages)
       .values({

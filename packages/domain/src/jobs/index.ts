@@ -5,6 +5,7 @@ export {
   runJobsOnce,
   startInProcessJobRunner,
   categorizeJobError,
+  logJobOutcome,
   type JobHandler,
   type JobOutcome,
   type RunJobsOnceOptions,

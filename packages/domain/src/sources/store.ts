@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import { findRepoRoot } from "@cerebro/database";
 import { parseSourceKey, sourceKeyFor, verifySourceBytes, type SourceObjectKey, type SourceStore } from "./object-key";
@@ -38,6 +38,14 @@ export class LocalSourceStore implements SourceStore {
     const parsed = parseSourceKey(key, organizationId);
     const data = await readFile(this.pathFor(parsed));
     return verifySourceBytes(parsed, new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
+  }
+
+  async delete(organizationId: string, key: string): Promise<void> {
+    try {
+      await unlink(this.pathFor(parseSourceKey(key, organizationId)));
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    }
   }
 }
 

@@ -58,11 +58,13 @@ export default async function EditBriefingPage({
         }
         width="wide"
       >
-        {sp.upload === "rejected" || sp.upload === "failed" ? (
+        {sp.upload === "rejected" || sp.upload === "failed" || sp.upload === "limited" ? (
           <p role="alert" className="mb-6 rounded-md border border-danger/40 bg-danger-soft px-4 py-3 text-sm text-danger">
             {sp.upload === "rejected"
               ? "The draft was created, but the uploaded file was not accepted (unsupported, too large or unreadable). Nothing from it was attached."
-              : "The draft was created, but the file couldn't be stored. Try uploading it again from a new brief, or continue writing here."}
+              : sp.upload === "limited"
+                ? "The draft was created, but too many files were uploaded recently, so this one was not attached. Wait a little, then upload it again from a new brief, or continue writing here."
+                : "The draft was created, but the file couldn't be stored. Try uploading it again from a new brief, or continue writing here."}
           </p>
         ) : null}
         <BriefingEditor

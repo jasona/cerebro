@@ -49,7 +49,7 @@ import { inAuthTx, parseInput } from "../briefings/shared";
 import type { RequestContext } from "../context";
 import { AI_SETTINGS, getAiRuntimeOrNull, resolveOrgAiPolicy } from "../engagement/ai-runtime";
 import { DomainError } from "../errors";
-import { insertAiRun } from "../jobs/summarize-topics";
+import { checkAiUsage, recordAiRun } from "../ops/ai-usage";
 
 // ---------------------------------------------------------------------------
 // DTOs and inputs
@@ -164,9 +164,11 @@ async function runWithFallback<T extends AiTask>(
   task: T,
   input: TaskInput<T>,
   policy: OrgAiPolicy,
+  usageLimited: boolean,
 ): Promise<{ result: Extract<RunTaskResult<TaskOutput<T>>, { ok: true }> | null; records: AiRunRecord[] }> {
   const runtime = await getAiRuntimeOrNull();
-  const candidates = runtime ? runtime.registry.candidates(task.name, policy) : [];
+  // Over the organization's AI usage limit, behave as during an outage: no provider call.
+  const candidates = runtime && !usageLimited ? runtime.registry.candidates(task.name, policy) : [];
   const records: AiRunRecord[] = [];
   for (const provider of candidates) {
     const res = await runTask(provider, task, input, { timeoutMs: AI_SETTINGS.proposalTimeoutMs });
@@ -191,7 +193,7 @@ async function runWithFallback<T extends AiTask>(
 
 async function insertRuns(tx: Tx, ctx: RequestContext, records: AiRunRecord[]): Promise<string | null> {
   let id: string | null = null;
-  for (const r of records) id = await insertAiRun(tx, ctx.organizationId, ctx.userId, r);
+  for (const r of records) id = await recordAiRun(tx, ctx.organizationId, ctx.userId, r);
   return id;
 }
 
@@ -274,6 +276,7 @@ export async function requestPerspectiveSuggestions(
       doc: parseStoredDraft(row.documentJson),
       version: row.lockVersion,
       policy: await resolveOrgAiPolicy(tx, c.organizationId),
+      usageLimited: !(await checkAiUsage(tx, c.organizationId)).allowed,
       pending: pendingLabels(await pendingRows(tx, c, input.briefingId)),
     };
   });
@@ -284,6 +287,7 @@ export async function requestPerspectiveSuggestions(
     SuggestPerspectivesTask,
     { document: prep.doc, baseVersion: prep.version, maxSuggestions: Math.min(8, wanted + prep.pending.length) },
     prep.policy,
+    prep.usageLimited,
   );
 
   const valid: { perspective: Perspective; rationale: string }[] = [];
@@ -361,13 +365,19 @@ export async function requestRevisionProposal(
   const prep = await inAuthTx(db, ctx, async (tx, c) => {
     await assertBriefingCapability(tx, c, input.briefingId, "edit");
     const row = await loadDraftRow(tx, c, input.briefingId);
-    return { doc: parseStoredDraft(row.documentJson), version: row.lockVersion, policy: await resolveOrgAiPolicy(tx, c.organizationId) };
+    return {
+      doc: parseStoredDraft(row.documentJson),
+      version: row.lockVersion,
+      policy: await resolveOrgAiPolicy(tx, c.organizationId),
+      usageLimited: !(await checkAiUsage(tx, c.organizationId)).allowed,
+    };
   });
 
   const { result, records } = await runWithFallback(
     ProposeRevisionTask,
     { document: prep.doc, baseVersion: prep.version, instruction: input.instruction, feedback: [] },
     prep.policy,
+    prep.usageLimited,
   );
 
   let outcome: RevisionProposalResult;

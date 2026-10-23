@@ -54,6 +54,28 @@ async function allowProviders(ids: string[]) {
   await sys((tx) => tx.update(organizations).set({ settings: { ai: { allowedProviders: ids } } }).where(eq(organizations.id, w.seed.orgs.acme.id)));
 }
 
+describe("AI usage limits", () => {
+  it("over the organization's limit, suggestions behave as during an outage: no provider call", async () => {
+    const d = await makeDraft(w);
+    let calls = 0;
+    const counting = fakeProvider("counting", () => {
+      calls++;
+      throw new Error("must not be called");
+    });
+    setAiRegistry(new ProviderRegistry({ providers: [counting] }));
+    await sys((tx) =>
+      tx
+        .update(organizations)
+        .set({ settings: { ai: { allowedProviders: ["counting"], usageLimits: { runs: "0/3600" } } } })
+        .where(eq(organizations.id, w.seed.orgs.acme.id)),
+    );
+    const res = await requestPerspectiveSuggestions(w.h.db, d.ctx, { briefingId: d.briefingId });
+    expect(calls).toBe(0);
+    expect(res.status).not.toBe("suggested");
+    expect(res.suggestions).toEqual([]);
+  });
+});
+
 describe("perspective suggestions are proposals only (principle 2)", () => {
   it("stores labelled suggestions without touching the draft or any publication", async () => {
     const d = await makePublished(w);

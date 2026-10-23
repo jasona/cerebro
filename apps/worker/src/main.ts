@@ -1,5 +1,5 @@
 /**
- * Background worker: index_revision, embed_revision, extract_source, summarize_topics.
+ * Background worker: index_revision, embed_revision, extract_source, summarize_topics, apply_retention.
  *
  * Runs only against PostgreSQL (DATABASE_URL). Under PGlite the web process
  * runs jobs in-process (`startInProcessJobRunner`), because PGlite permits one
