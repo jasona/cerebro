@@ -53,6 +53,25 @@ Adopted 2026-10-22 to unblock implementation; revisit at architecture review.
 
 The MCP adapter enforces connection revocation by authenticating every request; the domain does not recheck the connection inside `withAuthContext`.
 
+### D11 production-path security review follow-ups
+
+Adopted 2026-10-23 after a security review of the second-pass production paths (identity, OAuth, MCP, ops endpoints, storage, retention, backups, capture); revisit at architecture review. Each fix has a regression test.
+
+| Topic | Chosen behavior |
+| --- | --- |
+| Sign-in redirects | Post-sign-in `next` destinations must be same-origin paths with no control characters or backslashes |
+| Clerk session binding | Clerk session tokens are accepted only when their authorized party (`azp`) is the `APP_URL` origin |
+| MCP OAuth audience | The token audience comes only from `APP_URL`; OAuth stays off until `APP_URL` is set, in every environment |
+| OAuth discovery | Each authorization-server metadata request has a bounded timeout; a failed discovery is not cached |
+| Connections on membership removal | Removing a company membership revokes the user's MCP connections (dev tokens and OAuth grants) in that company, each audited. Re-adding the member does not revive them (extends D10) |
+| Concurrent first sign-in | A sign-in that races another first sign-in for the same identity resolves to the linked user, never `identity_conflict` |
+| Readiness token | Compared as fixed-length SHA-256 digests in constant time |
+| Backups | Postgres tools receive the password via `PGPASSWORD`, never argv; failures report only the tool, exit code and redacted stderr. Backup directories are 0700 and dumps 0600; restore accepts only the fixed file name for the backup's kind |
+| Shared stored objects | Deleting a content-addressed object is serialized with uploads of the same object by a per-object advisory lock, and references are rechecked just before deletion |
+| Archive inflation | DOCX/PPTX entries must inflate to exactly their declared size, capped at that size, before any parser runs; a mismatch is `unsafe_archive` |
+
+**Open for review:** whether editors of a linked briefing (not only the source's creator and owners/admins) may hard-delete a source; a per-page time limit for PDF parsing and rendering; object backup when the S3 store is selected; checking the access-token `typ`; the cross-company effect of revoking an OAuth grant; accepting tokens with no Cerebro scope; and a relink procedure if the Clerk instance (issuer) changes.
+
 ## Product decisions
 
 | ID | Decision | Proposed default | Status and review consequence |
