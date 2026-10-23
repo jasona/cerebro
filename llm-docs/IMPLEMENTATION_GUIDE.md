@@ -13,7 +13,7 @@ Dependencies are pre-installed at the root. **Do not run `npm install`** — if 
 | `@cerebro/briefing-schema` | Zod document schema (`src/document.ts`), ids, validation issues, published-document projection, revision diff, LLM handoff schema, sample fixtures |
 | `@cerebro/database` | Drizzle schema, SQL migrations (incl. RLS + roles), client factory (PGlite or node-postgres), `withAuthContext`, job queue table helpers, seed |
 | `@cerebro/domain` | All domain services and authorization. Every protected read/write goes through here |
-| `@cerebro/ai` | Task interfaces (compose, propose revision, answer, summarise topics), deterministic local provider, AI SDK adapter (injected model), retrieval, citation validation |
+| `@cerebro/ai` | Task interfaces (compose, propose revision, answer, summarise topics, suggest perspectives), deterministic local provider, Anthropic provider (official `@anthropic-ai/sdk`, D12), generic AI SDK adapter (injected model), retrieval, citation validation |
 | `@cerebro/capture` | Text/Markdown/PDF/DOCX/PPTX extraction to chunks with locators; local OCR (tesseract.js, bundled English data) for scanned PDF pages and PNG/JPEG/WebP images, run only in the extraction job; Markdown → draft document |
 | `@cerebro/briefing-renderer` | React components rendering a published or preview document (shared by reader, preview, studio canvas) |
 | `@cerebro/ui` | Design tokens (CSS variables), Tailwind theme, small accessible primitives |
@@ -38,6 +38,15 @@ Dependencies are pre-installed at the root. **Do not run `npm install`** — if 
 | `CEREBRO_S3_FORCE_PATH_STYLE`, `CEREBRO_S3_PREFIX`, `CEREBRO_S3_SSE`, `CEREBRO_S3_SSE_KMS_KEY_ID` | Optional: path-style addressing (`true`/`false`), a key prefix, server-side encryption (`AES256` or `aws:kms` with an optional key id) |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` | S3 credentials (standard variables; both key variables or neither). Unset → the SDK default credential chain |
 | `RATE_LIMIT_{MCP_TOOL,QA,UPLOAD}_PER_{USER,CONNECTION}` | `<max>/<windowSeconds>` or `off`. Off when unset; no limit has been agreed |
+| `CEREBRO_AI_PROVIDER` | `deterministic` (default), `anthropic` (Claude through the official SDK, D12) or `ai-sdk` (a generic AI SDK provider module). Unknown values fail at startup. Organizations must still list the provider id in `settings.ai.allowedProviders` before their data is sent |
+| `CEREBRO_AI_PROVIDER_ID` | Policy id of the model provider. Default `anthropic` with `anthropic`, `ai-sdk` with `ai-sdk` |
+| `CEREBRO_AI_MODEL` | Model id. Default `claude-opus-5-5` with `anthropic`; required with `ai-sdk` |
+| `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN` | Claude credentials, resolved by the SDK itself (or an `ant auth login` profile); Cerebro never reads or logs them. Missing credentials make calls fail with `provider_error`, so Q&A falls back to the next approved provider |
+| `CEREBRO_AI_TASK_MODELS`, `CEREBRO_AI_TASK_EFFORT` | `anthropic` only, optional: per-task overrides as `task=value,…` (tasks `answer`, `compose`, `propose_revision`, `suggest_perspectives`, `summarize_topics`; effort `low`…`max`) |
+| `CEREBRO_AI_REFUSAL_FALLBACK` | `anthropic` only: `default` (server-side refusal fallback, on by default) or `off` |
+| `CEREBRO_AI_SDK_MODULE`, `CEREBRO_AI_SDK_EXPORT` | `ai-sdk` only: the provider module and export to load |
+| `CEREBRO_EMBEDDINGS` | `none` (default), `local` (hashed, offline) or `ai-sdk`. Anthropic has no embeddings API, so the embedding source is still an open decision |
+| `CEREBRO_RETRIEVAL_MODE` | `fts` (default) or `hybrid` |
 | `AI_USAGE_LIMIT_RUNS`, `AI_USAGE_LIMIT_TOKENS` | Per-organization AI usage limits, `<max>/<windowSeconds>`; off when unset. `organizations.settings.ai.usageLimits` overrides per organization |
 | `RETENTION_SWEEP_INTERVAL_SECONDS` | Schedule `apply_retention` jobs; off when unset. Retention periods themselves are per-organization rows (none set) |
 | `READINESS_TOKEN` | Bearer token that unlocks full `/api/ready` details; unset → summary only |
