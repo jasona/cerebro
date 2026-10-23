@@ -48,7 +48,7 @@ import { recordAudit } from "../audit";
 import { RequestContext } from "../context";
 import { DomainError } from "../errors";
 import { JobError, permanent } from "../jobs/errors";
-import { canAccessSource } from "../sources/sources";
+import { canAccessSource, lockSourceObject } from "../sources/sources";
 import { getSourceStore } from "../sources/store";
 import { createLogger } from "./log";
 
@@ -249,14 +249,27 @@ async function purgeSources(tx: Tx, organizationId: string, sourceIds: string[])
   return { deletedSources: deleted.rows.length, deletedChunks: chunks.rows.length, updatedDrafts, orphanedKeys };
 }
 
-/** Delete stored objects after the database change committed. Failures are logged (keys are not content). */
-async function deleteObjects(organizationId: string, keys: string[]): Promise<{ deleted: number; failed: number }> {
+/**
+ * Delete stored objects after the database change committed. Each key is
+ * deleted under the object lock that addSource also takes, and only if no
+ * source references it at that moment: a source with the same bytes may have
+ * been added since the purge checked. Failures are logged (keys are not content).
+ */
+async function deleteObjects(db: Database, organizationId: string, keys: string[]): Promise<{ deleted: number; failed: number }> {
   let deleted = 0;
   let failed = 0;
   for (const key of keys) {
     try {
-      await getSourceStore().delete(organizationId, key);
-      deleted++;
+      // System context: a narrow existence check on object_key in this organization, for any user or none (retention).
+      const removed = await withSystemContext(db, async (tx) => {
+        await lockSourceObject(tx, key);
+        const ref = await tx.execute(sql`
+          select 1 from sources where organization_id = ${organizationId}::uuid and object_key = ${key} limit 1`);
+        if (ref.rows.length) return false;
+        await getSourceStore().delete(organizationId, key);
+        return true;
+      });
+      if (removed) deleted++;
     } catch (err) {
       failed++;
       logger.error("retention.object_delete_failed", { organizationId, errorName: err instanceof Error ? err.name : "unknown" });
@@ -312,7 +325,7 @@ export async function deleteSource(db: Database, ctx: RequestContext, raw: { sou
     });
     return purge;
   });
-  const objects = await deleteObjects(c.organizationId, res.orphanedKeys);
+  const objects = await deleteObjects(db, c.organizationId, res.orphanedKeys);
   logger.info("source.deleted", {
     organizationId: c.organizationId,
     userId: c.userId,
@@ -380,7 +393,7 @@ export async function applyRetention(db: Database, organizationId: string): Prom
         return { ids, purge: await purgeSources(tx, organizationId, ids) };
       });
       if (!batch.ids.length) break;
-      const objects = await deleteObjects(organizationId, batch.purge.orphanedKeys);
+      const objects = await deleteObjects(db, organizationId, batch.purge.orphanedKeys);
       deleted += batch.purge.deletedSources;
       deletedChunks += batch.purge.deletedChunks;
       updatedDrafts += batch.purge.updatedDrafts;

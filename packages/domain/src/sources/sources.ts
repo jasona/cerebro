@@ -9,6 +9,7 @@ import {
   withAuthContext,
   type Database,
   type Executor,
+  type Tx,
 } from "@cerebro/database";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -19,7 +20,7 @@ import { RequestContext } from "../context";
 import { DomainError } from "../errors";
 import { dedupeKeys } from "../jobs/kinds";
 import { enforceRateLimit } from "../ops/rate-limit";
-import { getSourceStore, sha256Hex } from "./store";
+import { getSourceStore, sha256Hex, sourceKeyFor } from "./store";
 
 // ---------------------------------------------------------------------------
 // Capture kind <-> stored mime type
@@ -100,6 +101,17 @@ export interface AddSourceResult {
 }
 
 /**
+ * Serialize work on one content-addressed object within the transaction:
+ * storing it for a new source (addSource) and deleting it once no source
+ * references it (source deletion and retention). Without this, an upload of
+ * the same bytes that commits between the deletion's reference check and the
+ * object removal would be left pointing at a deleted object.
+ */
+export async function lockSourceObject(tx: Tx, objectKey: string): Promise<void> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`cerebro:source-object:${objectKey}`}, 0))`);
+}
+
+/**
  * Store a private source and enqueue extraction. Requires `edit` on the
  * briefing when attached to one; otherwise an active company membership.
  * Bytes go to the private SourceStore (content-addressed, immutable); text is
@@ -129,6 +141,8 @@ export async function addSource(db: Database, ctx: RequestContext, raw: AddSourc
     let digest: string;
     let byteSize: number;
     if (input.bytes !== undefined) {
+      // Held until commit, so a concurrent deletion of the same object waits for this row.
+      await lockSourceObject(tx, sourceKeyFor(c.organizationId, input.bytes).key);
       const stored = await getSourceStore().put(c.organizationId, input.bytes);
       objectKey = stored.key;
       digest = stored.sha256;
