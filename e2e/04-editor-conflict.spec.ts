@@ -32,11 +32,11 @@ test.describe("editor conflict", () => {
       await expect(conflict).toBeVisible();
       await expect(conflict).toContainText("Nothing was overwritten.");
       await expect(b.page.getByRole("status").filter({ hasText: "Not saved: changed elsewhere" })).toBeVisible();
-      await expect(b.page.getByRole("textbox", { name: "Summary (required)", exact: true })).toHaveValue(summaryB);
+      await expect(b.page.getByRole("textbox", { name: "Summary (required)", exact: true })).toHaveText(summaryB);
 
       // The server kept A's change.
       await a.page.reload();
-      await expect(a.page.getByRole("textbox", { name: "Summary (required)", exact: true })).toHaveValue(summaryA);
+      await expect(a.page.getByRole("textbox", { name: "Summary (required)", exact: true })).toHaveText(summaryA);
     } finally {
       await a.context.close();
       await b.context.close();

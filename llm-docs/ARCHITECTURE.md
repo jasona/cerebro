@@ -29,7 +29,7 @@ flowchart LR
 | Repository | npm workspaces; internal TypeScript-source packages consumed without a build step (T16) | One install and no per-package build pipeline; pnpm is not installed |
 | Application | Next.js, React, strict TypeScript 6.0.x (T17) | Server-rendered reader, interactive authoring, and server endpoints |
 | UI | Tailwind CSS, Radix primitives, Cerebro-owned components | Accessible foundations with a distinct visual system |
-| Editing | Structured block forms for minimal manual editing; Tiptap inside structured blocks for the deeper studio (T22) | Schema-first editing now; controlled rich text later |
+| Editing | Structured block forms; prose (`RichText`) fields use Tiptap trimmed to the RichText syntax: paragraphs, line breaks, bold, italic, http(s) links (T22, W3.4) | Schema-first editing; the stored and published format stays the RichText string |
 | Validation | Zod | Runtime contracts for requests, documents, and AI output |
 | Persistence | PostgreSQL, Drizzle, SQL migrations; PGlite when `DATABASE_URL` is unset, node-postgres otherwise (T18) | Relational integrity with JSONB content snapshots; repeatable local setup |
 | Retrieval | PostgreSQL full-text search first; optional pgvector column populated only when an embedding provider is configured (T20) | Authorized evidence retrieval without a separate search service or a required embedding vendor |

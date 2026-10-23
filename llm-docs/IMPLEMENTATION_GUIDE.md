@@ -72,7 +72,7 @@ Document-internal ids are prefixed strings (`blk_`, `sec_`, `ev_`, `psp_`, `itm_
 | `/c/[company]/d/[department]` and `/t/[team]` below it | Department and team homes |
 | `/c/[company]/drafts` | My drafts |
 | `/c/[company]/b/[briefing]` | Reader, latest publication; `/v/[n]` pinned revision; `?perspective=psp_…` |
-| `/c/[company]/b/[briefing]/edit` | Minimal structured editor (draft) |
+| `/c/[company]/b/[briefing]/edit` | Structured editor (draft); Tiptap for RichText prose fields |
 | `/c/[company]/b/[briefing]/preview` | Reader preview + home/audience/evidence review + Publish |
 | `/c/[company]/b/[briefing]/history`, `/engagement`, `/access` | Author views |
 | `/c/[company]/new` | New brief (inherits home from `?department=&team=`) and import |

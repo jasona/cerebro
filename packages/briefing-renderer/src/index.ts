@@ -41,3 +41,14 @@ export { formatDate, formatNumber, formatValue } from "./format";
 export { BriefingOutline, OPEN_QUESTIONS_ID, type BriefingOutlineProps } from "./outline";
 export { briefingWordCount, countWords, estimateReadingMinutes, formatReadingTime } from "./reading-time";
 export { parseInline, RichText, richTextToPlain, safeHref, splitParagraphs, type InlineNode, type RichTextProps } from "./rich-text";
+export {
+  editorDocKey,
+  editorDocToRichText,
+  richTextToEditorDoc,
+  type EditorDoc,
+  type EditorHardBreakNode,
+  type EditorInlineNode,
+  type EditorMark,
+  type EditorParagraphNode,
+  type EditorTextNode,
+} from "./rich-text-doc";

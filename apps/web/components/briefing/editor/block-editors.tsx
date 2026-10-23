@@ -4,6 +4,7 @@ import { useState } from "react";
 import { newId, type Block, type EvidenceItem } from "@cerebro/briefing-schema/client";
 import { Button, Input, Select, Textarea } from "@cerebro/ui";
 import { ItemControls, move } from "./controls";
+import { RichTextField } from "./rich-text-field";
 
 type Of<T extends Block["type"]> = Extract<Block, { type: T }>;
 type Edit<B> = { block: B; onChange: (b: B) => void; idBase: string };
@@ -33,15 +34,7 @@ function NarrativeEditor({ block, onChange, idBase }: Edit<Of<"narrative">>) {
           { value: "alternative", label: "Alternative" },
         ]}
       />
-      <Textarea
-        id={`${idBase}-text`}
-        label="Text"
-        required
-        rows={5}
-        value={block.text}
-        hint="Separate paragraphs with a blank line. **bold**, _italic_ and [links](https://…) are supported."
-        onChange={(e) => onChange({ ...block, text: e.target.value })}
-      />
+      <RichTextField id={`${idBase}-text`} label="Text" required rows={5} value={block.text} onChange={(text) => onChange({ ...block, text })} />
     </>
   );
 }
@@ -50,7 +43,7 @@ function KeyFindingEditor({ block, onChange, idBase }: Edit<Of<"key_finding">>) 
   return (
     <>
       <Input id={`${idBase}-statement`} label="Finding" required value={block.statement} onChange={(e) => onChange({ ...block, statement: e.target.value })} />
-      <Textarea id={`${idBase}-detail`} label="Detail" rows={3} value={block.detail ?? ""} onChange={(e) => onChange({ ...block, detail: e.target.value })} />
+      <RichTextField id={`${idBase}-detail`} label="Detail" rows={3} value={block.detail ?? ""} onChange={(detail) => onChange({ ...block, detail })} />
     </>
   );
 }
@@ -363,7 +356,7 @@ function DecisionEditor({ block, onChange, idBase }: Edit<Of<"decision">>) {
   return (
     <>
       <Input id={`${idBase}-statement`} label="Decision" required value={block.statement} onChange={(e) => onChange({ ...block, statement: e.target.value })} />
-      <Textarea id={`${idBase}-rationale`} label="Rationale" rows={3} value={block.rationale ?? ""} onChange={(e) => onChange({ ...block, rationale: e.target.value })} />
+      <RichTextField id={`${idBase}-rationale`} label="Rationale" rows={3} value={block.rationale ?? ""} onChange={(rationale) => onChange({ ...block, rationale })} />
       {options.length ? (
         <ol className="flex flex-col gap-3">
           {options.map((o, i) => (
