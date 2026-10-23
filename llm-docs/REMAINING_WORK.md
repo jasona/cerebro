@@ -17,7 +17,7 @@ Status key:
 ## Next steps
 
 1. **Decision session (W0):** this is now the main blocker.
-2. **Merge:** review `remaining-work` and merge it to `main`. CI passes on the branch (all six jobs).
+2. **Credentials and the Coolify instance:** provide an Anthropic API key, Clerk keys and instance settings, and an S3-compatible bucket on Coolify, then follow `deploy/coolify/README.md` and the live checks below.
 3. **Per decision, connect and re-test:** each W2 item lists what to run once its vendor or value is chosen.
 4. **Pilot gates:** run them once the P12 targets exist.
 
@@ -32,10 +32,10 @@ These need the user, not an agent. Implementation should not guess them.
 | Admin self-add (D09 accepted risk) | Whether an admin who adds themselves to a team should gain that team's audience access, or whether membership changes by admins need audit or approval | Access rules, audit |
 | Withdrawn revisions | Whether older revisions stay readable by pinned link after the current revision is withdrawn | Publication and link resolution |
 | Q&A cohort minimum (D07) | Confirm or replace the provisional minimum of 3 distinct readers | Engagement and privacy rules |
-| AI provider | Select a provider and models for composition, Q&A and embeddings | W2.4, the retrieval default (W3.2) |
-| Hosting and region | Select hosting, managed Postgres and region (T10) | Deployment, backup schedule |
-| Object storage | Select an S3-compatible service (T10) | W2.3 |
-| Identity and MCP OAuth | Provide Clerk keys and choose the MCP OAuth authorization server (T13) | W2.2 |
+| AI provider | **Decided: Anthropic (D12).** Still open: model choices beyond the `claude-opus-5-5` default, evaluation thresholds, and an embedding source (Anthropic has no embeddings API) | The retrieval default (W3.2) |
+| Hosting and region | **Decided: internally on Coolify (D14).** Still open: the backup schedule and off-site copies | Backup schedule |
+| Object storage | Choose the S3-compatible service to run on Coolify | W2.3 |
+| Identity and MCP OAuth | **Decided: Clerk for both (D08, D13).** Still needed: Clerk keys and instance settings | W2.2 |
 | First LLM host | Confirm the first supported host (P17) | W2.2 and W3.1 verification |
 | Retention policy | Set periods for sources, conversations and events, and decide whether audit, published evidence, feedback and backups are covered (P11) | Turning on the W4 retention sweep |
 | Limits and costs | Set rate limits, AI run and token caps, and the readiness queue-age threshold, or confirm they stay off. Also decide whether the pre-existing cap of 30 reader questions per briefing per hour stays | Turning on W4 limits |
@@ -54,9 +54,10 @@ These need the user, not an agent. Implementation should not guess them.
 | Item | Status | Built | Still needed |
 | --- | --- | --- | --- |
 | W2.1 Postgres server path | Done | `TEST_DATABASE_URL` test mode; the full Vitest suite and all Playwright journeys pass on PostgreSQL 17.6 with pgvector, with a separate `npm run worker`; a pooled-connection leak regression test; owner privileges documented in the README | Confirm privileges on the chosen managed host. Moving existing PGlite data is not built; `db:backup`/`db:restore` are per-engine |
-| W2.2 Identity and MCP OAuth | Built, needs a decision | Clerk mode with an explicit identity link and invitation-only first sign-in (T23); MCP as an OAuth protected resource with per-tool scopes and revocable grants (T24); dev sign-in refused in production | Clerk keys, the authorization server choice, a public HTTPS `APP_URL`, a company picker for users in several companies, and an end-to-end run in the first host |
+| W2.2 Identity and MCP OAuth | Built for Clerk; needs keys | Clerk web mode (T23); MCP OAuth with Clerk's token profile, `typ: at+jwt`, audience binding and an audited reconnect after revocation (T24, D13); setup steps in `packages/integrations/README.md` | Clerk keys and instance settings (`aud_claim_enabled` is set through Clerk's API), a public HTTPS `APP_URL`, a company picker for users in several companies, and an end-to-end run in Claude and ChatGPT |
 | W2.3 Object storage | Built, needs a decision | S3-compatible adapter, verified against MinIO, including uploads and extraction through the domain services (T25) | The store vendor; private-bucket, encryption and lifecycle setup; a re-run of the integration test against it. Signed URLs are only needed if a feature ever serves original bytes |
-| W2.4 AI provider | Built, needs a decision | Provider selected by environment, failing fast if misconfigured; policy-bounded fallback; honest "unavailable" answers on failure; `npm run ai:eval` reports (T27) | Run the eval against the chosen model, then agree pass thresholds |
+| W2.4 AI provider | Built for Anthropic; needs a key | `AnthropicProvider` through the official SDK for all five tasks: structured outputs, per-task effort (provisional), a cached system prompt, server-side refusal fallback, fallback to the offline provider on failure (D12). Gated by each organization's `allowedProviders` | An API key; `npm run ai:live` and `npm run ai:eval`; agree thresholds. Check answer latency against the 15-second answer timeout |
+| W2.5 Deployment | Built for Coolify; needs the instance | Web and worker images, the `deploy/coolify` compose stack (pgvector PostgreSQL, one-shot migrate, web, worker), `db:provision`, `org:bootstrap`, and the runbook `deploy/coolify/README.md`. A CI `images` job builds and smoke-tests the stack (D14) | Deploy on the Coolify instance, choose the storage service, schedule backups with off-site copies |
 
 ## W3 Feature depth
 
