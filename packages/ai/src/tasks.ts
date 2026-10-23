@@ -18,7 +18,7 @@ import {
  * This package performs no data access.
  */
 
-export const TASK_NAMES = ["compose", "propose_revision", "answer", "summarize_topics"] as const;
+export const TASK_NAMES = ["compose", "propose_revision", "answer", "summarize_topics", "suggest_perspectives"] as const;
 export type AiTaskName = (typeof TASK_NAMES)[number];
 
 export interface AiTask<
@@ -295,11 +295,53 @@ export const SummarizeTopicsTask = defineTask({
   output: SummarizeTopicsOutput,
 });
 
+// ---------------------------------------------------------------------------
+// Suggest perspectives (Phase 3, D06)
+// ---------------------------------------------------------------------------
+
+export const SuggestPerspectivesInput = z.object({
+  /** The current draft. Suggestions may reference only its sections and blocks. */
+  document: BriefingDocument,
+  /** Draft lock version the suggestions are based on (echoed into stored suggestions). */
+  baseVersion: z.number().int().nonnegative().optional(),
+  maxSuggestions: z.number().int().min(1).max(8).default(3),
+});
+export type SuggestPerspectivesInput = z.infer<typeof SuggestPerspectivesInput>;
+
+export const SuggestedPerspective = z.object({
+  /**
+   * A complete perspective. It changes emphasis and implications only (D06):
+   * `emphasis` and implication `blockIds` must name existing sections and
+   * blocks, and text must not introduce facts the document does not state.
+   * Validated by `validateSuggestedPerspective` before it is stored.
+   */
+  perspective: Perspective,
+  /** Why this audience reading may help, shown to the author only. */
+  rationale: z.string().min(1).max(1000),
+});
+export type SuggestedPerspective = z.infer<typeof SuggestedPerspective>;
+
+export const SuggestPerspectivesOutput = z.object({
+  /** Proposals. Nothing here is applied to the draft until the author accepts it. */
+  suggestions: z.array(SuggestedPerspective).max(8),
+  /** Short explanation shown to the author (for example why there are none). */
+  notes: z.string().max(2000).optional(),
+});
+export type SuggestPerspectivesOutput = z.infer<typeof SuggestPerspectivesOutput>;
+
+export const SuggestPerspectivesTask = defineTask({
+  name: "suggest_perspectives",
+  promptVersion: "suggest_perspectives.v1",
+  input: SuggestPerspectivesInput,
+  output: SuggestPerspectivesOutput,
+});
+
 export const TASKS = {
   compose: ComposeTask,
   propose_revision: ProposeRevisionTask,
   answer: AnswerTask,
   summarize_topics: SummarizeTopicsTask,
+  suggest_perspectives: SuggestPerspectivesTask,
 } as const;
 
 export type AnyAiTask = (typeof TASKS)[AiTaskName];

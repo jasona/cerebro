@@ -11,3 +11,6 @@ export { tokenize, terms, splitSentences, extractNumbers, looksLikeInstruction, 
 export * from "./deterministic";
 export { AiSdkProvider, type AiSdkProviderOptions } from "./ai-sdk-provider";
 export * from "./eval";
+export * from "./embeddings";
+export * from "./perspectives";
+export * from "./config";

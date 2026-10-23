@@ -2,7 +2,17 @@
 
 import { revalidatePath } from "next/cache";
 import type { DocumentIssue } from "@cerebro/briefing-schema";
-import { composeDraftFromSource, createEvidenceFromChunk, isDomainError, updateDraft } from "@cerebro/domain";
+import {
+  acceptSuggestion,
+  composeDraftFromSource,
+  createEvidenceFromChunk,
+  dismissSuggestion,
+  isDomainError,
+  requestPerspectiveSuggestions,
+  requestRevisionProposal,
+  updateDraft,
+  type RevisionProposalResult,
+} from "@cerebro/domain";
 import { getBriefingRequestContext } from "@/lib/context";
 import { errorMessage } from "@/lib/errors";
 import { paths } from "@/lib/paths";
@@ -120,5 +130,96 @@ export async function composeFromSourceAction(input: {
     }
     if (err.code === "validation" && reasons.length) return { status: "not_ready", message: err.message };
     return { status: "error", message: errorMessage(err.code) };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// AI-assisted proposals (W3.3). Suggestions are stored for review; only
+// accepting one changes the draft, with the same expectedVersion check.
+// ---------------------------------------------------------------------------
+
+type Target = { company: string; briefing: string; briefingId: string };
+
+export type SuggestOutcome =
+  | { status: "suggested" | "none" | "unavailable"; count: number; notes?: string }
+  | { status: "error"; message: string };
+
+export async function suggestPerspectivesAction(input: Target): Promise<SuggestOutcome> {
+  try {
+    const rc = await getBriefingRequestContext(input.company, input.briefing);
+    const res = await requestPerspectiveSuggestions(rc.db, rc.ctx, { briefingId: input.briefingId });
+    revalidatePath(paths.briefingEdit(input.company, input.briefing));
+    return { status: res.status, count: res.suggestions.length, ...(res.notes ? { notes: res.notes } : {}) };
+  } catch (err) {
+    if (isDomainError(err)) return { status: "error", message: errorMessage(err.code) };
+    throw err;
+  }
+}
+
+export type ProposalOutcome =
+  | { status: RevisionProposalResult["status"]; explanation?: string }
+  | { status: "error"; message: string };
+
+export async function requestProposalAction(input: Target & { instruction: string }): Promise<ProposalOutcome> {
+  try {
+    const rc = await getBriefingRequestContext(input.company, input.briefing);
+    const res = await requestRevisionProposal(rc.db, rc.ctx, { briefingId: input.briefingId, instruction: input.instruction });
+    revalidatePath(paths.briefingEdit(input.company, input.briefing));
+    return { status: res.status, ...(res.explanation ? { explanation: res.explanation } : {}) };
+  } catch (err) {
+    if (isDomainError(err)) return { status: "error", message: err.code === "validation" ? "Write an instruction first." : errorMessage(err.code) };
+    throw err;
+  }
+}
+
+export type DecideOutcome =
+  | { status: "accepted"; version: number; issues: DocumentIssue[] }
+  | { status: "dismissed" }
+  | { status: "conflict"; currentVersion: number | null; stale: boolean; message: string }
+  | { status: "invalid"; message: string }
+  | { status: "error"; message: string };
+
+function decideError(err: unknown): DecideOutcome {
+  if (!isDomainError(err)) throw err;
+  const d = err.details as { currentVersion?: unknown; reason?: unknown; messages?: unknown } | undefined;
+  if (err.code === "conflict") {
+    return {
+      status: "conflict",
+      currentVersion: typeof d?.currentVersion === "number" ? d.currentVersion : null,
+      stale: d?.reason === "suggestion_stale",
+      message: d?.reason === "suggestion_decided" ? "This suggestion was already accepted or dismissed." : err.message,
+    };
+  }
+  if (err.code === "validation") {
+    const messages = Array.isArray(d?.messages) ? d.messages.filter((m): m is string => typeof m === "string").slice(0, 5) : [];
+    return { status: "invalid", message: [err.message, ...messages].join(" ").slice(0, 1000) };
+  }
+  return { status: "error", message: errorMessage(err.code) };
+}
+
+export async function acceptSuggestionAction(input: Target & { suggestionId: string; expectedVersion: number }): Promise<DecideOutcome> {
+  try {
+    const rc = await getBriefingRequestContext(input.company, input.briefing);
+    const res = await acceptSuggestion(rc.db, rc.ctx, {
+      briefingId: input.briefingId,
+      suggestionId: input.suggestionId,
+      expectedVersion: input.expectedVersion,
+    });
+    revalidatePath(paths.briefingEdit(input.company, input.briefing));
+    revalidatePath(paths.briefingPreview(input.company, input.briefing));
+    return { status: "accepted", version: res.draftVersion, issues: res.issues };
+  } catch (err) {
+    return decideError(err);
+  }
+}
+
+export async function dismissSuggestionAction(input: Target & { suggestionId: string }): Promise<DecideOutcome> {
+  try {
+    const rc = await getBriefingRequestContext(input.company, input.briefing);
+    await dismissSuggestion(rc.db, rc.ctx, { briefingId: input.briefingId, suggestionId: input.suggestionId });
+    revalidatePath(paths.briefingEdit(input.company, input.briefing));
+    return { status: "dismissed" };
+  } catch (err) {
+    return decideError(err);
   }
 }

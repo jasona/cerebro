@@ -1,4 +1,4 @@
-export { JOB_KINDS, dedupeKeys, enqueueIndexRevision, isRevisionIndexed, type JobKind } from "./kinds";
+export { JOB_KINDS, dedupeKeys, enqueueIndexRevision, enqueueEmbedRevision, isRevisionIndexed, type JobKind } from "./kinds";
 export { JobError } from "./errors";
 export {
   JOB_HANDLERS,
@@ -15,3 +15,4 @@ export {
 export { handleIndexRevision } from "./index-revision";
 export { handleExtractSource } from "./extract-source";
 export { handleSummarizeTopics } from "./summarize-topics";
+export { handleEmbedRevision } from "./embed-revision";

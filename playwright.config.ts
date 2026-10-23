@@ -7,11 +7,12 @@ import { defineConfig, devices } from "@playwright/test";
  * single-process and tests share seeded state, so everything runs on one
  * worker in file order.
  *
- * Run: `npm run test:e2e` (or `npx playwright test`). Requires Chromium at
+ * Run: `npm run test:e2e` (or `npx playwright test`); `E2E_PORT` overrides
+ * the default port 3400 (e.g. for parallel worktrees). Requires Chromium at
  * /usr/bin/chromium (override with PLAYWRIGHT_CHROMIUM_PATH).
  */
 const repoRoot = resolve(import.meta.dirname);
-const PORT = 3400;
+const PORT = Number(process.env.E2E_PORT ?? 3400);
 const BASE_URL = `http://localhost:${PORT}`;
 const pgliteDir = resolve(repoRoot, ".data", "pglite-e2e");
 const objectsDir = resolve(repoRoot, ".data", "objects-e2e");

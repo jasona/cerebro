@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { claimJobs, completeJob, failJob, type Database, type Job } from "@cerebro/database";
 import { isDomainError } from "../errors";
 import { JobError } from "./errors";
+import { handleEmbedRevision } from "./embed-revision";
 import { handleExtractSource } from "./extract-source";
 import { handleIndexRevision } from "./index-revision";
 import { JOB_KINDS, type JobKind } from "./kinds";
@@ -17,6 +18,7 @@ export const JOB_HANDLERS: Record<JobKind, JobHandler> = {
   index_revision: handleIndexRevision,
   extract_source: handleExtractSource,
   summarize_topics: handleSummarizeTopics,
+  embed_revision: handleEmbedRevision,
 };
 
 export interface RunJobsOnceOptions {

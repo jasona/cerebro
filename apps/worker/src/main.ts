@@ -1,11 +1,12 @@
 /**
- * Background worker: index_revision, extract_source, summarize_topics.
+ * Background worker: index_revision, embed_revision, extract_source, summarize_topics.
  *
  * Runs only against PostgreSQL (DATABASE_URL). Under PGlite the web process
  * runs jobs in-process (`startInProcessJobRunner`), because PGlite permits one
  * process per data directory.
  */
 import { createDatabase } from "@cerebro/database";
+import { loadAiRuntime } from "@cerebro/domain";
 import { assertWorkerDatabaseUrl, jsonLogger, PGLITE_REFUSAL, runWorkerLoop } from "./worker";
 
 async function main(): Promise<number> {
@@ -14,6 +15,18 @@ async function main(): Promise<number> {
     url = assertWorkerDatabaseUrl();
   } catch {
     jsonLogger("error", "worker.refused", { reason: "pglite_not_supported", detail: PGLITE_REFUSAL });
+    return 1;
+  }
+  // Fail fast on AI misconfiguration (e.g. CEREBRO_AI_PROVIDER=ai-sdk without
+  // the named module installed). The message names settings, never secrets.
+  try {
+    const rt = await loadAiRuntime();
+    jsonLogger("info", "worker.ai", {
+      embeddings: rt.embeddings ? `${rt.embeddings.id}:${rt.embeddings.model}` : null,
+      retrievalMode: rt.retrievalMode,
+    });
+  } catch (err) {
+    jsonLogger("error", "worker.refused", { reason: "ai_config", detail: err instanceof Error ? err.message : "invalid AI configuration" });
     return 1;
   }
   const handle = await createDatabase({ url });

@@ -78,7 +78,7 @@ describe("migrations", () => {
   it("are idempotent", async () => {
     expect(await migrate(h)).toEqual([]);
     const rows = await h.db.execute<{ id: string }>(sql`select id from schema_migrations order by id`);
-    expect(rows.rows.map((r) => r.id)).toEqual(["0001_extensions", "0002_schema", "0003_security", "0004_preview_base_publication", "0005_briefing_reads"]);
+    expect(rows.rows.map((r) => r.id)).toEqual(["0001_extensions", "0002_schema", "0003_security", "0004_preview_base_publication", "0005_briefing_reads", "0007_briefing_suggestions"]);
   });
 
   it("enables and forces RLS on every tenant table and on users/organizations", async () => {

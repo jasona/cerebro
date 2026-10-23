@@ -3,6 +3,7 @@ import type {
   AnswerInput,
   ComposeInput,
   ProposeRevisionInput,
+  SuggestPerspectivesInput,
   SummarizeTopicsInput,
 } from "./tasks";
 import { TASKS } from "./tasks";
@@ -128,6 +129,26 @@ Rules:
   return { system, prompt, promptVersion: TASKS.summarize_topics.promptVersion };
 }
 
+export function suggestPerspectivesPrompt(input: SuggestPerspectivesInput): PromptPair {
+  const existing = input.document.perspectives.map((p) => p.label);
+  const system = `You suggest audience perspectives for an executive briefing draft. The author reviews every suggestion; you only propose.
+${DATA_RULES}
+
+A perspective is an audience-specific reading of the SAME briefing. It changes emphasis and implications only; it never adds, removes, hides or changes facts.
+
+Rules:
+- Suggest at most ${input.maxSuggestions} perspectives for audiences this briefing plausibly serves. Do not repeat an existing label${existing.length ? ` (${existing.map((l) => JSON.stringify(l)).join(", ")})` : ""}.
+- "emphasis" lists ONLY section ids that exist in the document, in reading order.
+- Each implication's "blockIds" lists ONLY block ids that exist in the document.
+- Summary and implications restate what the document already says, framed for the audience. Never introduce a number, date, name, owner, amount, source or claim the document does not contain.
+- Labels are 1 to 3 words (at most 60 characters). Ids use the prefixes psp_ and itm_ followed by 4 to 64 letters, digits, _ or -.
+- "rationale" tells the author, in one or two sentences, why this audience reading may help. It is never shown to readers.
+- If no perspective would help, return an empty list and explain in "notes".`;
+
+  const prompt = [dataBlock("document", input.document), "Return the suggestions object."].join("\n\n");
+  return { system, prompt, promptVersion: TASKS.suggest_perspectives.promptVersion };
+}
+
 export function buildPrompt(task: AiTaskName, input: unknown): PromptPair {
   switch (task) {
     case "answer":
@@ -138,5 +159,7 @@ export function buildPrompt(task: AiTaskName, input: unknown): PromptPair {
       return proposeRevisionPrompt(input as ProposeRevisionInput);
     case "summarize_topics":
       return summarizeTopicsPrompt(input as SummarizeTopicsInput);
+    case "suggest_perspectives":
+      return suggestPerspectivesPrompt(input as SuggestPerspectivesInput);
   }
 }

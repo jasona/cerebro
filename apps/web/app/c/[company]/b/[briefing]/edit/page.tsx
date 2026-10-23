@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { getDraft, getSourceExtraction, listBriefingSources, type SourceExtractionDto } from "@cerebro/domain";
+import { getDraft, getSourceExtraction, listBriefingSources, listSuggestions, type SourceExtractionDto } from "@cerebro/domain";
 import { AuthorPage } from "@/components/briefing/author-nav";
 import { BriefingEditor } from "@/components/briefing/editor/editor";
 import { RailCollapsed } from "@/components/workspace/shell-context";
@@ -23,6 +23,7 @@ export default async function EditBriefingPage({
   const { rc, meta, company, briefing } = await requireAuthorView(params, "edit");
   const sp = await searchParams;
   const draft = await loadOrThrow(() => getDraft(rc.db, rc.ctx, meta.briefingId));
+  const suggestions = await listSuggestions(rc.db, rc.ctx, meta.briefingId).catch(() => []);
 
   // Every source linked to the briefing (uploads, handoffs), plus any named in
   // the URL or referenced by draft evidence that is not linked (defensive).
@@ -72,6 +73,7 @@ export default async function EditBriefingPage({
           lockVersion={draft.lockVersion}
           issues={draft.issues}
           sources={sources}
+          suggestions={suggestions}
           canPublish={meta.capabilities.includes("publish")}
         />
       </AuthorPage>

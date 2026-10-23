@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { PRIVATE_DRAFT_TITLE, contextAs, uid } from "./helpers";
+import { PRIVATE_DRAFT_TITLE, contextAs, settle, uid } from "./helpers";
 
 test.describe("editor conflict", () => {
   test.skip(({ isMobile }) => isMobile, "desktop only");
@@ -14,6 +14,8 @@ test.describe("editor conflict", () => {
 
       for (const p of [a.page, b.page]) {
         await p.goto(editPath);
+        // Wait for hydration: filling a server-rendered textarea mid-hydration can keep its old text.
+        await settle(p);
         await expect(p.getByRole("status").filter({ hasText: /All changes saved · draft version \d+/ })).toBeVisible();
       }
 
