@@ -1,4 +1,4 @@
-import { extractSource } from "@cerebro/capture";
+import { extractSource, type OcrOptions } from "@cerebro/capture";
 import { briefingDrafts, briefingSources, sourceChunks, sources, withAuthContext, type Database, type Job } from "@cerebro/database";
 import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -7,6 +7,25 @@ import { composeDraftFromSource } from "../sources/compose";
 import { canAccessSource, captureKindFromMime } from "../sources/sources";
 import { getSourceStore, sha256Hex } from "../sources/store";
 import { JobError, permanent, requireJobOrg, workerContext } from "./errors";
+
+/**
+ * OCR settings for extraction jobs (scanned PDF pages and images), read from the
+ * environment. OCR runs locally with bundled English data by default.
+ *
+ * - `CEREBRO_OCR=off` turns OCR off (pages and images are reported as gaps).
+ * - `CEREBRO_OCR_LANGUAGES` is a comma-separated list of Tesseract codes (default `eng`).
+ *   Languages other than English need their traineddata in `CEREBRO_OCR_LANG_PATH`.
+ * - `CEREBRO_OCR_LANG_PATH` is a local directory of `<lang>.traineddata.gz` files (never a URL).
+ */
+export function ocrOptionsFromEnv(env: NodeJS.ProcessEnv = process.env): OcrOptions {
+  const options: OcrOptions = {};
+  if (["off", "false", "0"].includes((env.CEREBRO_OCR ?? "").trim().toLowerCase())) options.enabled = false;
+  const languages = env.CEREBRO_OCR_LANGUAGES?.split(",").map((l) => l.trim()).filter(Boolean);
+  if (languages?.length) options.languages = languages;
+  const langPath = env.CEREBRO_OCR_LANG_PATH?.trim();
+  if (langPath) options.langPath = langPath;
+  return options;
+}
 
 const Payload = z.object({ sourceId: z.string().uuid(), requestedBy: z.string().uuid() });
 
@@ -23,6 +42,10 @@ const setStatus = (status: "running" | "succeeded" | "failed", errorCategory: st
  * access. Extracted text is untrusted, private authoring material: it is
  * stored only in source_chunks and never logged; gaps (codes and messages,
  * which never contain extracted text) go on the `source.extracted` audit event.
+ *
+ * Scanned PDF pages and images are read by local OCR here, in the job, never in
+ * a request handler. OCR is bounded by per-page and per-source time limits and
+ * reports failures as gaps, so a bad scan cannot fail or hang the job.
  */
 export async function handleExtractSource(db: Database, job: Job): Promise<void> {
   requireJobOrg(job);
@@ -83,7 +106,7 @@ export async function handleExtractSource(db: Database, job: Job): Promise<void>
     input = { kind, text };
   }
 
-  const result = await extractSource(input);
+  const result = await extractSource(input, { ocr: ocrOptionsFromEnv() });
   if (result.status === "failed") {
     await fail(result.errorCategory ?? "extraction_error");
     return;
@@ -116,6 +139,7 @@ export async function handleExtractSource(db: Database, job: Job): Promise<void>
         completeness: result.status,
         chunkCount: result.chunks.length,
         characters: result.stats.characters,
+        ...(result.stats.ocrPages ? { ocrPages: result.stats.ocrPages } : {}),
         gaps: result.gaps.map((g) => ({
           code: g.code,
           message: g.message,

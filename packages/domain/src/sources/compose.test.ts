@@ -4,11 +4,13 @@ import { join } from "node:path";
 import { GAP_PLACEHOLDERS, GAP_PREFIX, newId, SCHEMA_VERSION, type BriefingDocument } from "@cerebro/briefing-schema";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildDocx, buildPptx } from "../../../capture/test/fixtures";
+import { buildScannedPdf, textImage } from "../../../capture/test/image-fixtures";
 import { createBriefing, getDraft, updateDraft } from "../briefings/index";
 import { DomainError } from "../errors";
 import { drainJobs, makePublishedBriefing } from "../engagement/test-fixtures";
 import { createTestWorld, type TestWorld } from "../testing";
-import { addSource, composeDraftFromSource, isUntouchedTemplate, listBriefingSources, LocalSourceStore, setSourceStore } from "./index";
+import { ocrOptionsFromEnv } from "../jobs/index";
+import { addSource, composeDraftFromSource, getSourceExtraction, isUntouchedTemplate, listBriefingSources, LocalSourceStore, setSourceStore } from "./index";
 
 let w: TestWorld;
 let objects: string;
@@ -189,5 +191,61 @@ describe("composeDraftFromSource", () => {
     const after = await getDraft(w.h.db, w.ctx("maya"), fb.id);
     expect(after.lockVersion).toBe(before.lockVersion);
     expect(after.document).toEqual(before.document);
+  });
+});
+
+describe("OCR sources", () => {
+  it(
+    "reads an uploaded image in the extraction job and composes candidate evidence marked as OCR",
+    async () => {
+      const b = await blankBriefing("Whiteboard");
+      const src = await addSource(w.h.db, w.ctx("maya"), {
+        briefingId: b.briefingId,
+        kind: "image",
+        filename: "whiteboard.jpg",
+        bytes: await textImage(["Onboarding time fell to 41 days"], { format: "jpeg" }),
+        origin: "upload",
+        composeDraft: true,
+      });
+      // Nothing is read at upload time: OCR runs only in the job.
+      expect((await getSourceExtraction(w.h.db, w.ctx("maya"), src.sourceId)).status).toBe("pending");
+      await drainJobs(w);
+
+      const ex = await getSourceExtraction(w.h.db, w.ctx("maya"), src.sourceId);
+      expect(ex).toMatchObject({ captureKind: "image", status: "succeeded", completeness: "complete", chunkCount: 1 });
+      expect(ex.chunks[0]!.locator).toMatch(/^Image \(OCR, \d{1,3}% confidence\)$/);
+      expect(ex.chunks[0]!.preview.toLowerCase()).toContain("onboarding time fell");
+      expect(ex.gaps).toContainEqual(expect.objectContaining({ code: "ocr_used", locator: "Image", affectsCompleteness: false }));
+
+      const draft = await getDraft(w.h.db, w.ctx("maya"), b.briefingId);
+      expect(draft.document.evidence).toHaveLength(1);
+      expect(draft.document.evidence[0]).toMatchObject({ status: "candidate", locator: expect.stringContaining("(OCR,") });
+    },
+    60_000,
+  );
+
+  it(
+    "OCRs only the scanned pages of an uploaded PDF",
+    async () => {
+      const b = await blankBriefing("Scan");
+      const src = await addSource(w.h.db, w.ctx("maya"), {
+        briefingId: b.briefingId,
+        kind: "pdf",
+        filename: "scan.pdf",
+        bytes: buildScannedPdf([{ text: ["Decision requested: approve the pilot budget."] }, { scan: ["Budget approved in March"] }]),
+        origin: "upload",
+      });
+      await drainJobs(w);
+      const ex = await getSourceExtraction(w.h.db, w.ctx("maya"), src.sourceId);
+      expect(ex.status).toBe("succeeded");
+      expect(ex.chunks.map((c) => c.locator)).toEqual(["p. 1", expect.stringMatching(/^p\. 2 \(OCR, \d{1,3}% confidence\)$/)]);
+    },
+    60_000,
+  );
+
+  it("reads OCR settings from the environment, English by default", () => {
+    expect(ocrOptionsFromEnv({})).toEqual({});
+    expect(ocrOptionsFromEnv({ CEREBRO_OCR: "off" })).toEqual({ enabled: false });
+    expect(ocrOptionsFromEnv({ CEREBRO_OCR_LANGUAGES: "eng, deu", CEREBRO_OCR_LANG_PATH: "/opt/tessdata" })).toEqual({ languages: ["eng", "deu"], langPath: "/opt/tessdata" });
   });
 });

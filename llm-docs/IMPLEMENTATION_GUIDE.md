@@ -14,7 +14,7 @@ Dependencies are pre-installed at the root. **Do not run `npm install`** — if 
 | `@cerebro/database` | Drizzle schema, SQL migrations (incl. RLS + roles), client factory (PGlite or node-postgres), `withAuthContext`, job queue table helpers, seed |
 | `@cerebro/domain` | All domain services and authorization. Every protected read/write goes through here |
 | `@cerebro/ai` | Task interfaces (compose, propose revision, answer, summarise topics), deterministic local provider, AI SDK adapter (injected model), retrieval, citation validation |
-| `@cerebro/capture` | Text/Markdown/PDF/DOCX/PPTX extraction to chunks with locators; Markdown → draft document |
+| `@cerebro/capture` | Text/Markdown/PDF/DOCX/PPTX extraction to chunks with locators; local OCR (tesseract.js, bundled English data) for scanned PDF pages and PNG/JPEG/WebP images, run only in the extraction job; Markdown → draft document |
 | `@cerebro/briefing-renderer` | React components rendering a published or preview document (shared by reader, preview, studio canvas) |
 | `@cerebro/ui` | Design tokens (CSS variables), Tailwind theme, small accessible primitives |
 | `@cerebro/integrations` | MCP server (tools from LLM_INTEGRATION.md) calling domain services; connection-token auth |
@@ -29,6 +29,10 @@ Dependencies are pre-installed at the root. **Do not run `npm install`** — if 
 | `AUTH_MODE` | `dev` (default locally) enables the dev identity adapter; `clerk` uses Clerk |
 | `SESSION_SECRET` | HMAC key for dev session cookies (dev default provided with a warning) |
 | `APP_URL` | Canonical base URL, default `http://localhost:3000` |
+| `CEREBRO_OCR` | `off` disables OCR in extraction jobs (scanned pages and images are then reported as gaps). Default on |
+| `CEREBRO_OCR_LANGUAGES` | Comma-separated Tesseract language codes. Default `eng`; only English data is bundled |
+| `CEREBRO_OCR_LANG_PATH` | Local directory of `<lang>.traineddata.gz` files for other languages (never a URL; nothing is downloaded at runtime) |
+| `E2E_PORT` | Port for the Playwright dev server, default 3400 |
 
 ## Data access contract
 

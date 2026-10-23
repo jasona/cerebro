@@ -30,7 +30,9 @@ Transferred content uses the private source pipeline. Host-supplied excerpts arr
 6. At publication, copy approved excerpts and safe attribution into revision evidence.
 7. Build reader retrieval projections from the published document and approved evidence only.
 
-Steps 1–4 for uploaded files arrive in Phase 3. Phase 2 handles host-transferred text and candidate excerpts through the same private-source and approval rules. The initial import scope is pasted text/Markdown and text extraction from PDF, DOCX, and PPTX. OCR, complex chart reconstruction, and private conversation-link connectors are deferred.
+Steps 1–4 for uploaded files arrive in Phase 3. Phase 2 handles host-transferred text and candidate excerpts through the same private-source and approval rules. The initial import scope is pasted text/Markdown and text extraction from PDF, DOCX, and PPTX, plus local OCR for scanned PDF pages and PNG/JPEG/WebP images. Complex chart reconstruction and private conversation-link connectors are deferred.
+
+OCR runs only in the background extraction job, on the server, with bundled language data (English by default) and no cloud OCR service. A PDF page is OCR-read only when its text layer is missing or nearly empty. OCR text is candidate text like any other extraction: its locator says it was machine-read ("p. 3 (OCR, 91% confidence)"), an informational gap tells the author to check it against the original, low-confidence lines are left out and reported as a gap, and page-count, pixel and time limits, failures and timeouts all become gaps rather than errors. OCR never approves evidence.
 
 Imported documents are untrusted input. Processing requires file limits, safe rendering, and appropriate parser isolation. Instructions embedded in sources cannot change permissions or invoke application tools.
 

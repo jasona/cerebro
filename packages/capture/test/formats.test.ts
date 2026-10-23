@@ -13,7 +13,7 @@ describe("PDF", () => {
     expect(r.chunks.map((c) => c.locator.label)).toEqual(["p. 1", "p. 3"]);
     expect(r.chunks[0]!.text).toContain("Revenue grew 12% in Q3.");
     expect(r.chunks[1]!.text).toContain("expand to EMEA");
-    expect(r.gaps).toContainEqual(expect.objectContaining({ code: "no_text_layer", message: "Page 2 has no text layer; OCR is not supported.", affectsCompleteness: true }));
+    expect(r.gaps).toContainEqual(expect.objectContaining({ code: "no_text_layer", message: "Page 2 has no text layer, and OCR found no readable text.", affectsCompleteness: true }));
     expect(r.chunks[0]!.checksum).toMatch(/^sha256:[0-9a-f]{64}$/);
   });
 
