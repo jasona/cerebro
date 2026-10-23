@@ -12,11 +12,11 @@ Lifecycle: **Capture → Compose → Publish → Engage → Analyze → Evolve.*
 
 ## Current state
 
-- **Phase:** First implementation pass complete for local testing (2026-10-22). It covers Phases 0–4 and parts of Phase 5 at prototype depth; see "Completion evidence" in `llm-docs/MVP_PLAN.md`. Architecture review is still pending, and nothing is production-ready or pilot-ready.
+- **Phase:** Second implementation pass complete (2026-10-23) on branch `remaining-work`. Every `llm-docs/REMAINING_WORK.md` item that needs no user decision is built, and the vendor-neutral part of each remaining item is built. See "Completion evidence" in `llm-docs/MVP_PLAN.md`. Architecture review is still pending, and nothing is production-ready or pilot-ready.
 - **Code:** npm-workspace monorepo (`apps/web`, `apps/worker`, `packages/*`), described in `README.md` and `llm-docs/IMPLEMENTATION_GUIDE.md`. It has SQL migrations with RLS, Vitest suites (unit, security regression, and RLS under the runtime role) and Playwright journeys.
-- **Repository:** Git initialised. Nothing has been committed yet.
-- **Decisions:** D01–D02 were set by the user. D03–D10 and the implementation amendments T07 and T16–T22 were adopted to unblock implementation at the user's direction to proceed on planned defaults; all are subject to architecture review. P13/P14 remain proposals.
-- **Not production:** a dev sign-in replaces Clerk, dev connection tokens replace MCP OAuth (D08), no AI vendor is selected (deterministic provider only), there is no object storage adapter, and hosting, retention and pilot targets are unset.
+- **Repository:** GitHub `jasona/cerebro`, default branch `main`. Second-pass work is on `remaining-work`, pending merge. CI is in `.github/workflows/ci.yml`.
+- **Decisions:** D01–D02 were set by the user. D03–D10, the implementation amendments T07 and T16–T22, and the second-pass selections T23–T29 were adopted to unblock implementation at the user's direction; all are subject to architecture review. P13/P14 remain proposals.
+- **Not production:** Clerk, MCP OAuth (resource-server side), S3-compatible storage, AI provider wiring, rate limits, AI usage limits and retention are built but unconfigured, because no vendor, limit or retention period has been chosen. Local development still uses the dev sign-in, dev connection tokens, the deterministic AI provider and the filesystem store.
 
 The documents in `llm-docs/` describe intent and proposals. Treat implemented behavior as evidenced only by the code and tests, and do not describe a decision as approved unless the user approved it.
 
@@ -66,10 +66,10 @@ For the full scope, non-goals, and success measures, see `llm-docs/GOALS.md`. Fo
 - **Data:** PostgreSQL with Drizzle. Documents are stored as JSONB; retrieval uses pgvector and full-text search; row-level security adds a second layer of protection.
 - **Identity and AI:** Clerk handles identity, while Cerebro owns authorization. AI SDK calls sit behind task interfaces.
 - **LLM integration:** A remote MCP adapter calls the same domain services. An established OAuth server provides delegated authorization, subject to compatibility review; optional MCP Apps UI provides preview and publish controls in supported hosts.
-- **Jobs and storage:** pg-boss for jobs and private S3-compatible object storage.
+- **Jobs and storage:** a Cerebro-owned PostgreSQL jobs table (T07, replacing pg-boss) and private S3-compatible object storage.
 - **Testing:** Vitest and Playwright.
 
-The proposed monorepo layout is `apps/{web,worker}` plus `packages/{domain,database,briefing-schema,briefing-renderer,ui,ai,integrations}`. Neither the stack nor the layout exists yet. Confirm both with the user before scaffolding.
+The proposed monorepo layout is `apps/{web,worker}` plus `packages/{domain,database,briefing-schema,briefing-renderer,ui,ai,capture,integrations}`. Both now exist as adopted defaults (see `README.md` and `llm-docs/IMPLEMENTATION_GUIDE.md`) and remain subject to architecture review.
 
 ## Non-negotiable principles
 
@@ -107,3 +107,4 @@ These are the project's core constraints. Apply them in every design and every l
 | 2026-10-22 | User directed implementation of the full plan using agent judgement. Recorded D03–D09 and the implementation amendments, added `ACCESS_MATRIX.md` and `IMPLEMENTATION_GUIDE.md`, and built the monorepo: the schema/RLS/database layer, domain services, the deterministic AI provider with an evaluation set, capture, the renderer and design tokens, the web app (library, reader, editor, preview/publish, history, access, engagement, admin, settings), the MCP adapter, and the worker. Verified by 414 Vitest tests and 29 Playwright journeys, all passing. |
 | 2026-10-23 | Added `llm-docs/REMAINING_WORK.md`: user decisions, housekeeping, production foundations (Postgres server path, Clerk/OAuth, object storage, AI provider), feature depth and pilot readiness. No dates, targets or vendors set. |
 | 2026-10-23 | Added a System / Light / Dark theme switch (account menu and Settings → Appearance), saved per browser in localStorage and applied before first paint. Dark tokens now also apply under `data-theme="dark"`. Covered by `e2e/11-theme.spec.ts` and a token parity test. |
+| 2026-10-23 | Second implementation pass on `remaining-work`. Built CI with a schema drift check, Postgres server test mode (all suites pass on PostgreSQL 17.6), Clerk identity and the MCP OAuth resource server, an S3-compatible store, AI provider wiring, embeddings and AI suggestions, the MCP Apps inline preview, the Tiptap editor, local OCR, cohort-suppression fixes, rate limits, AI usage limits, health checks, retention, backup/restore and a latency script. Recorded T23–T29. All are vendor-neutral, and every limit and retention period is unset. The user removed the accessibility audit from scope. |
