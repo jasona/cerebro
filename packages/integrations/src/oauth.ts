@@ -108,8 +108,15 @@ export function protectedResourceMetadataResponse(opts: { env?: Env; appUrl?: st
 type FetchFn = typeof fetch;
 const keySets = new Map<string, Promise<JWTVerifyGetKey>>();
 
+/**
+ * Upper bound for one metadata request. Discovery is shared by every request
+ * through `keySets`, so a hanging authorization server must fail (and be
+ * retried later) rather than leave one pending promise that stalls them all.
+ */
+const DISCOVERY_TIMEOUT_MS = 5_000;
+
 /** Find `jwks_uri` in the issuer's RFC 8414 or OpenID metadata; the metadata must name the same issuer. */
-async function discoverJwksUri(issuer: string, fetchFn: FetchFn): Promise<string> {
+async function discoverJwksUri(issuer: string, fetchFn: FetchFn, timeoutMs: number): Promise<string> {
   const u = new URL(issuer);
   const path = u.pathname.replace(/\/+$/, "");
   const candidates = [
@@ -118,7 +125,8 @@ async function discoverJwksUri(issuer: string, fetchFn: FetchFn): Promise<string
     `${u.origin}${path}/.well-known/openid-configuration`,
   ];
   for (const url of [...new Set(candidates)]) {
-    const res = await fetchFn(url, { headers: { accept: "application/json" } }).catch(() => null);
+    const signal = AbortSignal.timeout(timeoutMs);
+    const res = await fetchFn(url, { headers: { accept: "application/json" }, signal }).catch(() => null);
     if (!res?.ok) continue;
     const meta = (await res.json().catch(() => null)) as { issuer?: unknown; jwks_uri?: unknown } | null;
     if (meta?.issuer === issuer && typeof meta.jwks_uri === "string") return meta.jwks_uri;
@@ -126,11 +134,11 @@ async function discoverJwksUri(issuer: string, fetchFn: FetchFn): Promise<string
   throw new Error("authorization server metadata with a matching issuer and jwks_uri was not found");
 }
 
-function keySetFor(cfg: OAuthResourceConfig, fetchFn: FetchFn): Promise<JWTVerifyGetKey> {
+function keySetFor(cfg: OAuthResourceConfig, fetchFn: FetchFn, timeoutMs: number): Promise<JWTVerifyGetKey> {
   const cacheKey = `${cfg.issuer}\n${cfg.jwksUrl ?? ""}`;
   let p = keySets.get(cacheKey);
   if (!p) {
-    p = (async () => createRemoteJWKSet(new URL(cfg.jwksUrl ?? (await discoverJwksUri(cfg.issuer, fetchFn)))))();
+    p = (async () => createRemoteJWKSet(new URL(cfg.jwksUrl ?? (await discoverJwksUri(cfg.issuer, fetchFn, timeoutMs)))))();
     p.catch(() => keySets.delete(cacheKey));
     keySets.set(cacheKey, p);
   }
@@ -156,6 +164,8 @@ export interface VerifyOptions {
   /** Test seam: a key resolver (e.g. jose `createLocalJWKSet`). Defaults to the issuer's remote JWKS. */
   getKey?: JWTVerifyGetKey;
   fetch?: FetchFn;
+  /** Test seam: per-request timeout for authorization server metadata discovery. */
+  discoveryTimeoutMs?: number;
 }
 
 function scopesOf(payload: JWTPayload): string[] {
@@ -172,7 +182,7 @@ export async function verifyAccessToken(
 ): Promise<{ ok: true; token: VerifiedAccessToken } | { ok: false; reason: AccessTokenFailure }> {
   let payload: JWTPayload;
   try {
-    const getKey = opts.getKey ?? (await keySetFor(cfg, opts.fetch ?? fetch));
+    const getKey = opts.getKey ?? (await keySetFor(cfg, opts.fetch ?? fetch, opts.discoveryTimeoutMs ?? DISCOVERY_TIMEOUT_MS));
     ({ payload } = await jwtVerify(token, getKey, {
       issuer: cfg.issuer,
       audience: cfg.resource,

@@ -20,6 +20,7 @@ import {
   protectedResourceMetadataResponse,
   TOOL_SCOPES,
   type McpScope,
+  verifyAccessToken,
 } from "../src/index";
 import { APP_URL, MCP_URL, platformHandoff } from "./helpers";
 
@@ -388,5 +389,40 @@ describe("grants and revocation", () => {
     expect(res.status).toBe(403);
     expect(await res.json()).toMatchObject({ error: { code: "forbidden", details: { reason: "company_selection_required" } } });
     expect(await oauthConnections()).toHaveLength(0);
+  });
+});
+
+describe("authorization server discovery", () => {
+  const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+
+  it("a hanging metadata endpoint times out instead of stalling every request", async () => {
+    const issuer = `https://hang-${crypto.randomUUID()}.example.test`;
+    const cfg = oauthConfig({ ...ENV, CEREBRO_OAUTH_ISSUER: issuer })!;
+    let calls = 0;
+    const hanging: typeof fetch = (_url, init) => {
+      calls++;
+      return new Promise((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(init.signal!.reason)));
+    };
+    const t = await token({ iss: issuer });
+    const verify = () => verifyAccessToken(t, cfg, { fetch: hanging, discoveryTimeoutMs: 50 });
+    const hung = new Promise((r) => setTimeout(() => r("hung"), 5_000));
+    expect(await Promise.race([verify(), hung])).toEqual({ ok: false, reason: "invalid" });
+    // The failure is not cached: the next request tries discovery again.
+    const before = calls;
+    expect(await Promise.race([verify(), hung])).toEqual({ ok: false, reason: "invalid" });
+    expect(calls).toBeGreaterThan(before);
+  });
+
+  it("refuses metadata that names a different issuer (mix-up)", async () => {
+    const issuer = `https://mixup-${crypto.randomUUID()}.example.test`;
+    const cfg = oauthConfig({ ...ENV, CEREBRO_OAUTH_ISSUER: issuer })!;
+    const seen: string[] = [];
+    const lying: typeof fetch = async (url) => {
+      seen.push(String(url));
+      return json({ issuer: "https://attacker.example.test", jwks_uri: "https://attacker.example.test/jwks" });
+    };
+    expect(await verifyAccessToken(await token({ iss: issuer }), cfg, { fetch: lying })).toEqual({ ok: false, reason: "invalid" });
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((u) => u.startsWith(issuer))).toBe(true);
   });
 });
