@@ -21,6 +21,8 @@ On 2026-10-22, the user specified Company → Department → Team and easy disco
 | D20 | 2026-10-23 | **Product proposals adopted as proposed:** P07–P09 and P12–P19 become decisions with their proposed defaults. P17's first supported LLM host is **Claude**, with ChatGPT next | User decision. Affects LLM_INTEGRATION, GOALS, MVP_PLAN, TEAM_WORKSPACES, ACCESS_MATRIX |
 | D21 | 2026-10-23 | **Limits stay off for the pilot.** Rate limits and AI usage caps (T28) remain unset until real usage data exists; the existing cap of 30 reader questions per briefing per hour stays | User decision. Revisit with pilot usage data |
 | D22 | 2026-10-23 | **Pilot targets after first real usage.** Latency, AI evaluation thresholds and adoption measures (P12) are agreed from baselines collected during the pilot (`npm run perf`, `npm run ai:eval`) | User decision. Pilot exit gates wait for these targets |
+| D23 | 2026-10-23 | **No embedding vendor for the pilot: full-text search.** `CEREBRO_EMBEDDINGS` stays `none` and `CEREBRO_RETRIEVAL_MODE` stays `fts`; hybrid search remains built but off | User decision. Revisit if search quality is a problem |
+| D24 | 2026-10-23 | **Retention covers sources, Q&A conversations and events only.** Audit events, published evidence excerpts and submitted feedback are never deleted by retention; backups follow their own rotation. Matches the implemented categories (T28) | User decision. Completes P11 with D18 |
 
 D02 records the user's instruction to update the plan after reviewing the proposed integration experience. It does not imply approval of every technical detail, host, identity vendor, or outstanding privacy decision.
 

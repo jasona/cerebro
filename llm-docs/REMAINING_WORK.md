@@ -23,7 +23,7 @@ Status key:
 
 ## W0 Decisions for the user
 
-Settled on 2026-10-23: the AI provider (D12), MCP OAuth (D13), hosting (D14), admin self-add (D15), withdrawal (D16), the cohort minimum (D17), default retention (D18), the architecture review of the adopted decisions (D19), the open product proposals with Claude as the first host (D20), limits off for the pilot (D21), and pilot targets set after first usage (D22).
+Settled on 2026-10-23: the AI provider (D12), MCP OAuth (D13), hosting (D14), admin self-add (D15), withdrawal (D16), the cohort minimum (D17), default retention (D18), the architecture review of the adopted decisions (D19), the open product proposals with Claude as the first host (D20), limits off for the pilot (D21), pilot targets set after first usage (D22), full-text search with no embedding vendor (D23), and retention covering sources, Q&A and events only (D24).
 
 What remains needs the user's credentials, infrastructure or later data:
 
@@ -32,8 +32,6 @@ What remains needs the user's credentials, infrastructure or later data:
 | Anthropic API key | Provide a key; then run `npm run ai:live` and `npm run ai:eval`, and check answer latency against the 15-second answer timeout | Live verification of D12 |
 | Clerk instance | Provide keys and apply the instance settings in `packages/integrations/README.md` (including `aud_claim_enabled` through Clerk's API) | Live verification of D13, web sign-in |
 | Coolify instance | Deploy with `deploy/coolify/README.md`, choose the S3-compatible storage service, and schedule backups with off-site copies | Live verification of D14 |
-| Embedding source | Anthropic has no embeddings API; choose an embedding source, or keep full-text search | The retrieval default (W3.2) |
-| Retention coverage | Whether audit, published evidence, feedback and backups fall under retention, and any per-company periods (default keep everything, D18) | Turning on the retention sweep for a company |
 | Pilot targets | Agree latency, AI evaluation and adoption targets from pilot baselines (D22) | Pilot exit gates |
 
 ## W1 Housekeeping — Done
@@ -59,7 +57,7 @@ What remains needs the user's credentials, infrastructure or later data:
 | Item | Status | Notes |
 | --- | --- | --- |
 | W3.1 In-host preview | Done; not yet verified in a real host | MCP Apps inline preview with a confirmed Publish bound to the server-issued preview (T14). Text fallback unchanged |
-| W3.2 Embedding search | Built, needs a decision | Embedding jobs over published blocks and approved evidence only; hybrid retrieval behind `CEREBRO_RETRIEVAL_MODE`, default full-text. The default needs measurements with a real embedding model |
+| W3.2 Embedding search | Built; off by decision (D23) | Embedding jobs over published blocks and approved evidence only; hybrid retrieval behind `CEREBRO_RETRIEVAL_MODE`, default full-text. The default needs measurements with a real embedding model |
 | W3.3 AI-assisted composition | Done | Suggested perspectives and revision proposals stored as suggestions; the author accepts or dismisses them through the normal versioned save; D06 checks applied |
 | W3.4 Rich-text editor | Done | Tiptap v3 for prose fields, limited to the existing `RichText` syntax; no schema change |
 | W3.5 OCR | Done | Local `tesseract.js` with bundled English data, in the extraction job only; limits are provisional (T26) |
