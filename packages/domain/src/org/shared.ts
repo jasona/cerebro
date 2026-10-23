@@ -100,3 +100,13 @@ export const toDate = (v: unknown): Date => (v instanceof Date ? v : new Date(St
 export const toDateOrNull = (v: unknown): Date | null => (v === null || v === undefined ? null : toDate(v));
 
 export const DisplayName = z.string().trim().min(1).max(120);
+
+/** True when a (possibly driver-wrapped) Postgres error is a unique violation (23505). */
+export function isUniqueViolation(err: unknown): boolean {
+  let e = err as { code?: string; cause?: unknown } | undefined;
+  for (let i = 0; e && i < 5; i++) {
+    if (e.code === "23505") return true;
+    e = e.cause as typeof e;
+  }
+  return false;
+}

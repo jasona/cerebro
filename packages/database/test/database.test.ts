@@ -6,6 +6,7 @@ import {
   briefings,
   createTestDatabase,
   departments,
+  integrationConnections,
   integrationOperations,
   memberships,
   migrate,
@@ -13,6 +14,7 @@ import {
   seedOrganizations,
   TENANT_TABLES,
   teams,
+  userIdentities,
   users,
   withAuthContext,
   withSystemContext,
@@ -78,7 +80,7 @@ describe("migrations", () => {
   it("are idempotent", async () => {
     expect(await migrate(h)).toEqual([]);
     const rows = await h.db.execute<{ id: string }>(sql`select id from schema_migrations order by id`);
-    expect(rows.rows.map((r) => r.id)).toEqual(["0001_extensions", "0002_schema", "0003_security", "0004_preview_base_publication", "0005_briefing_reads"]);
+    expect(rows.rows.map((r) => r.id)).toEqual(["0001_extensions", "0002_schema", "0003_security", "0004_preview_base_publication", "0005_briefing_reads", "0006_identity_links"]);
   });
 
   it("enables and forces RLS on every tenant table and on users/organizations", async () => {
@@ -87,7 +89,7 @@ describe("migrations", () => {
           where relnamespace = 'public'::regnamespace and relkind = 'r'`,
     );
     const byName = new Map(rows.rows.map((r) => [r.relname, r]));
-    for (const table of [...TENANT_TABLES, "users", "organizations"]) {
+    for (const table of [...TENANT_TABLES, "users", "organizations", "user_identities"]) {
       expect(byName.get(table), table).toMatchObject({ relrowsecurity: true, relforcerowsecurity: true });
     }
   });
@@ -232,6 +234,77 @@ describe("tenant isolation under cerebro_app", () => {
       tx.select().from(memberships),
     );
     expect(rows.map((r) => r.userId)).toEqual([seed.users.maya]);
+  });
+});
+
+describe("identity links and OAuth connections (0006)", () => {
+  const ISSUER = "https://issuer.test";
+
+  it("user_identities: own links only, no writes, under cerebro_app", async () => {
+    await withSystemContext(h.db, (tx) =>
+      tx.insert(userIdentities).values([
+        { userId: seed.users.maya, issuer: ISSUER, subject: "maya-sub" },
+        { userId: seed.users.riley, issuer: ISSUER, subject: "riley-sub" },
+      ]),
+    );
+    const seenByMaya = await withAuthContext(h.db, { userId: seed.users.maya, organizationId: acme }, (tx) =>
+      tx.select({ subject: userIdentities.subject }).from(userIdentities),
+    );
+    expect(seenByMaya.map((r) => r.subject)).toEqual(["maya-sub"]);
+
+    const insert = await pgError(() =>
+      withAuthContext(h.db, { userId: seed.users.maya, organizationId: acme }, (tx) =>
+        tx.insert(userIdentities).values({ userId: seed.users.maya, issuer: "https://other.test", subject: "x" }),
+      ),
+    );
+    expect(insert.code).toBe("42501");
+    const update = await pgError(() =>
+      withAuthContext(h.db, { userId: seed.users.maya, organizationId: acme }, (tx) =>
+        tx.execute(sql`update user_identities set subject = 'stolen' where subject = 'maya-sub'`),
+      ),
+    );
+    expect(update.code).toBe("42501");
+  });
+
+  it("an (issuer, subject) links to exactly one user, and a user has one link per issuer", async () => {
+    const dupSubject = await pgError(() =>
+      withSystemContext(h.db, (tx) => tx.insert(userIdentities).values({ userId: seed.users.alex, issuer: ISSUER, subject: "maya-sub" })),
+    );
+    expect(dupSubject.code).toBe("23505");
+    const secondForIssuer = await pgError(() =>
+      withSystemContext(h.db, (tx) => tx.insert(userIdentities).values({ userId: seed.users.maya, issuer: ISSUER, subject: "maya-2" })),
+    );
+    expect(secondForIssuer.code).toBe("23505");
+  });
+
+  it("OAuth connections need an issuer and no token hash, and one active grant per company/user/issuer/client", async () => {
+    const values = { organizationId: acme, userId: seed.users.maya, kind: "oauth", label: "OAuth", clientId: "client-a" };
+    const noIssuer = await pgError(() => withSystemContext(h.db, (tx) => tx.insert(integrationConnections).values(values)));
+    expect(noIssuer.code).toBe("23514");
+    const withHash = await pgError(() =>
+      withSystemContext(h.db, (tx) => tx.insert(integrationConnections).values({ ...values, issuer: ISSUER, tokenHash: "h" })),
+    );
+    expect(withHash.code).toBe("23514");
+
+    await withAuthContext(h.db, { userId: seed.users.maya, organizationId: acme }, (tx) =>
+      tx.insert(integrationConnections).values({ ...values, issuer: ISSUER }),
+    );
+    const second = await pgError(() =>
+      withAuthContext(h.db, { userId: seed.users.maya, organizationId: acme }, (tx) =>
+        tx.insert(integrationConnections).values({ ...values, issuer: ISSUER }),
+      ),
+    );
+    expect(second.code).toBe("23505");
+    // Once revoked, a new active grant may replace it.
+    await withAuthContext(h.db, { userId: seed.users.maya, organizationId: acme }, async (tx) => {
+      await tx.execute(sql`update integration_connections set status = 'revoked', revoked_at = now() where kind = 'oauth' and client_id = 'client-a'`);
+      await tx.insert(integrationConnections).values({ ...values, issuer: ISSUER });
+    });
+    // Tenant isolation still applies: invisible from Globex.
+    const fromGlobex = await withAuthContext(h.db, { userId: seed.users.taylor, organizationId: globex }, (tx) =>
+      tx.select().from(integrationConnections).where(eq(integrationConnections.kind, "oauth")),
+    );
+    expect(fromGlobex).toHaveLength(0);
   });
 });
 

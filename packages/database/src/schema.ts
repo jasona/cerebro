@@ -272,12 +272,24 @@ export const integrationConnections = pgTable(
     tokenPrefix: text("token_prefix"),
     lastUsedAt: ts("last_used_at"),
     revokedAt: ts("revoked_at"),
+    /** OAuth connections: the authorization server issuer (migration 0006). */
+    issuer: text("issuer"),
+    /** OAuth connections: tokens authenticated at or before this instant are refused (0006). */
+    notBefore: ts("not_before"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     unique("integration_connections_org_id_key").on(t.organizationId, t.id),
     index("integration_connections_user_idx").on(t.organizationId, t.userId),
+    uniqueIndex("integration_connections_oauth_active_key")
+      .on(t.organizationId, t.userId, t.issuer, t.clientId)
+      .where(sql`kind = 'oauth' and status = 'active'`),
+    index("integration_connections_oauth_lookup_idx").on(t.userId, t.issuer, t.clientId).where(sql`kind = 'oauth'`),
+    check(
+      "integration_connections_oauth_check",
+      sql`(${t.kind} = 'oauth' and ${t.issuer} is not null and ${t.tokenHash} is null) or (${t.kind} = 'dev_token' and ${t.issuer} is null and ${t.tokenHash} is not null)`,
+    ),
     foreignKey({
       name: "integration_connections_membership_fk",
       columns: [t.organizationId, t.userId],
@@ -1178,6 +1190,29 @@ export const briefingReads = pgTable(
       columns: [t.organizationId, t.briefingId],
       foreignColumns: [briefings.organizationId, briefings.id],
     }),
+  ],
+);
+
+/**
+ * Explicit identity links (migration 0006): a verified external identity
+ * (issuer + subject, from Clerk or the MCP OAuth authorization server) to a
+ * Cerebro user. Not a tenant table; RLS exposes only the caller's own links.
+ */
+export const userIdentities = pgTable(
+  "user_identities",
+  {
+    id: pk(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    issuer: text("issuer").notNull(),
+    subject: text("subject").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    unique("user_identities_issuer_subject_key").on(t.issuer, t.subject),
+    unique("user_identities_user_issuer_key").on(t.userId, t.issuer),
+    check("user_identities_nonempty_check", sql`length(${t.issuer}) > 0 and length(${t.subject}) > 0`),
   ],
 );
 

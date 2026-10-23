@@ -1,18 +1,16 @@
 import "server-only";
+import { resolveAuthMode, type AuthMode } from "./auth-mode";
 
-export type AuthMode = "dev" | "clerk";
+export type { AuthMode };
 
 /**
- * Resolved identity adapter. `dev` is the default only outside production;
- * production without an explicit AUTH_MODE fails closed to `clerk`, so the dev
- * user picker can never be enabled by omission. (Dev sessions in production
- * additionally require SESSION_SECRET, see session-token.ts.)
+ * Resolved identity adapter (see auth-mode.ts). `dev` is the default only
+ * outside production; production without an explicit AUTH_MODE fails closed
+ * to `clerk`, and AUTH_MODE=dev in production throws, so the dev user picker
+ * can never be enabled there.
  */
 export function authMode(): AuthMode {
-  const raw = process.env.AUTH_MODE?.trim().toLowerCase();
-  if (raw === "clerk") return "clerk";
-  if (raw === "dev") return "dev";
-  return process.env.NODE_ENV === "production" ? "clerk" : "dev";
+  return resolveAuthMode(process.env);
 }
 
 export const isDevAuth = (): boolean => authMode() === "dev";

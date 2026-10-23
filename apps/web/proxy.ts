@@ -1,18 +1,29 @@
 import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server";
+import { resolveAuthMode } from "./lib/auth-mode";
 
 /**
  * Request proxy (Next 16's renamed middleware).
  *
- * Only AUTH_MODE=clerk does anything here: Clerk's `auth()` requires
- * clerkMiddleware to have run for the request. In dev mode this is a
- * pass-through and Clerk is never loaded. Authorization is NOT enforced here;
- * domain services are the security boundary.
+ * Only Clerk mode does anything here: Clerk's `auth()` requires
+ * clerkMiddleware to have run for the request. The mode is resolved by the
+ * same rule as the server (auth-mode.ts), so production without AUTH_MODE
+ * gets Clerk, and AUTH_MODE=dev in production fails. In dev mode this is a
+ * pass-through and Clerk is never loaded.
+ *
+ * The MCP endpoint and OAuth metadata skip Clerk: MCP requests carry their
+ * own bearer credentials (OAuth access tokens or dev connection tokens),
+ * which Clerk must not interpret as session tokens.
+ *
+ * Authorization is NOT enforced here; domain services are the security
+ * boundary.
  */
 type Handler = (req: NextRequest, ev: NextFetchEvent) => Promise<Response | undefined | void> | Response | undefined | void;
 let clerkHandler: Handler | undefined;
 
+const BYPASS_CLERK = /^\/(?:api\/mcp|\.well-known)(?:\/|$)/;
+
 export async function proxy(req: NextRequest, ev: NextFetchEvent) {
-  if (process.env.AUTH_MODE?.trim().toLowerCase() !== "clerk") return NextResponse.next();
+  if (resolveAuthMode(process.env) !== "clerk" || BYPASS_CLERK.test(req.nextUrl.pathname)) return NextResponse.next();
   if (!clerkHandler) {
     const { clerkMiddleware } = await import("@clerk/nextjs/server");
     clerkHandler = clerkMiddleware() as unknown as Handler;
