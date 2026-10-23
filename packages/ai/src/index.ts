@@ -10,6 +10,8 @@ export { seededIds, collectIds, type IdFactory as AiIdFactory } from "./ids";
 export { tokenize, terms, splitSentences, extractNumbers, looksLikeInstruction, stem } from "./text";
 export * from "./deterministic";
 export { AiSdkProvider, type AiSdkProviderOptions } from "./ai-sdk-provider";
+export * from "./anthropic-provider";
+export { structuredOutputSchema } from "./output-schema";
 export * from "./eval";
 export * from "./embeddings";
 export * from "./perspectives";

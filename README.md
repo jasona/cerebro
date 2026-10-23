@@ -73,8 +73,8 @@ Every setting is documented in `.env.example` and `llm-docs/IMPLEMENTATION_GUIDE
 
 - **Web sign-in:** `AUTH_MODE=clerk` with `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`. First sign-in needs a pending invitation for the verified email. `AUTH_MODE=dev` is refused when `NODE_ENV=production`.
 - **MCP OAuth:** set `CEREBRO_OAUTH_ISSUER` to the chosen authorization server's issuer, and `APP_URL` to the public HTTPS URL, which defines the token audience. Metadata is served at `/.well-known/oauth-protected-resource`. See `packages/integrations/README.md`.
-- **AI provider:** `CEREBRO_AI_PROVIDER=ai-sdk`, `CEREBRO_AI_SDK_MODULE` (an installed AI SDK provider package) and `CEREBRO_AI_MODEL`. Each organization must allow the provider in its settings before its data is sent there. `npm run ai:eval` writes answer and retrieval metrics to `.data/ai-eval/`. See `packages/ai/README.md`.
-- **Embeddings and retrieval:** `CEREBRO_EMBEDDINGS` (`none`, `local` or `ai-sdk`) and `CEREBRO_RETRIEVAL_MODE` (`fts`, the default, or `hybrid`).
+- **AI provider (Anthropic, D12):** `CEREBRO_AI_PROVIDER=anthropic` with `ANTHROPIC_API_KEY` (model default `claude-opus-5-5` via `CEREBRO_AI_MODEL`). Each organization must allow the provider id `anthropic` in its settings before its data is sent there. The generic `CEREBRO_AI_PROVIDER=ai-sdk` path (`CEREBRO_AI_SDK_MODULE`, `CEREBRO_AI_MODEL`) remains. `npm run ai:eval` writes answer and retrieval metrics to `.data/ai-eval/`; `npm run ai:live` checks every task against Claude when credentials exist. See `packages/ai/README.md`.
+- **Embeddings and retrieval:** `CEREBRO_EMBEDDINGS` (`none`, `local` or `ai-sdk`) and `CEREBRO_RETRIEVAL_MODE` (`fts`, the default, or `hybrid`). Anthropic has no embeddings API; the embedding source is still open.
 - **Object storage:** see "Source object storage" above.
 
 ## Operations

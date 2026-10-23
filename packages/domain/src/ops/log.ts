@@ -78,6 +78,8 @@ export const LOG_FIELD_ALLOWLIST: ReadonlySet<string> = new Set([
   "intervalMs",
   "inputTokens",
   "outputTokens",
+  "cacheReadInputTokens",
+  "cacheWriteInputTokens",
   "attempts",
   "claimed",
   "count",

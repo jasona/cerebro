@@ -25,6 +25,7 @@ const config: NextConfig = {
     "@tesseract.js-data/eng",
     "@napi-rs/canvas",
     "@aws-sdk/client-s3",
+    "@anthropic-ai/sdk",
   ],
   poweredByHeader: false,
   experimental: { serverActions: { bodySizeLimit: "20mb" } },

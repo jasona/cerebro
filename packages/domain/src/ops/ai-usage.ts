@@ -56,6 +56,8 @@ export async function recordAiRun(tx: Executor, organizationId: string, actorId:
     latencyMs: record.latencyMs,
     inputTokens: record.usage.inputTokens ?? null,
     outputTokens: record.usage.outputTokens ?? null,
+    cacheReadInputTokens: record.usage.cacheReadInputTokens ?? null,
+    cacheWriteInputTokens: record.usage.cacheWriteInputTokens ?? null,
     errorCategory: record.errorCategory,
   });
   return row!.id;

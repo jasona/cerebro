@@ -4,9 +4,12 @@ Task interfaces, providers, retrieval helpers and evaluation sets for Cerebro's
 AI features. This package does no data access: the domain layer authorises,
 scopes and stores everything (see `packages/domain`).
 
-**No AI vendor is selected.** Nothing here imports or names one. The default is
-the offline deterministic provider (T19), and connecting an approved provider
-later is configuration plus installing one package.
+**AI provider: Anthropic (Claude), D12.** `AnthropicProvider` calls Claude
+through the official `@anthropic-ai/sdk`. The default is still the offline
+deterministic provider (T19): Claude runs only with
+`CEREBRO_AI_PROVIDER=anthropic`, and only for organisations whose AI policy
+lists `anthropic`. The generic AI SDK adapter (`ai-sdk`) remains for other
+injected models.
 
 ## Tasks
 
@@ -41,11 +44,14 @@ the worker in `apps/worker/src/main.ts`, and `npm run ai:eval`).
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `CEREBRO_AI_PROVIDER` | `deterministic` | `deterministic` or `ai-sdk` |
-| `CEREBRO_AI_PROVIDER_ID` | `ai-sdk` | Policy id for the model provider. An organisation must list it in `organizations.settings.ai.allowedProviders` before any of its data is sent there |
-| `CEREBRO_AI_SDK_MODULE` | none | Module to import at runtime: an installed package name, or a path relative to the working directory |
-| `CEREBRO_AI_SDK_EXPORT` | `default` | Export of that module to use (see contract below) |
-| `CEREBRO_AI_MODEL` | none | Model id; required with `ai-sdk` |
+| `CEREBRO_AI_PROVIDER` | `deterministic` | `deterministic`, `anthropic` or `ai-sdk` |
+| `CEREBRO_AI_PROVIDER_ID` | `anthropic` / `ai-sdk` | Policy id for the model provider (default follows the provider kind). An organisation must list it in `organizations.settings.ai.allowedProviders` before any of its data is sent there |
+| `CEREBRO_AI_MODEL` | `claude-opus-5-5` with `anthropic`; none otherwise | Model id; required with `ai-sdk` |
+| `CEREBRO_AI_TASK_MODELS` | none | `anthropic` only: per-task model ids, `task=model,…` |
+| `CEREBRO_AI_TASK_EFFORT` | none | `anthropic` only: per-task effort, `task=low\|medium\|high\|xhigh\|max,…` (defaults below) |
+| `CEREBRO_AI_REFUSAL_FALLBACK` | `default` | `anthropic` only: `default` sends `fallbacks: "default"` (server-side refusal fallback); `off` omits it |
+| `CEREBRO_AI_SDK_MODULE` | none | `ai-sdk` only: module to import at runtime, an installed package name or a path relative to the working directory |
+| `CEREBRO_AI_SDK_EXPORT` | `default` | `ai-sdk` only: export of that module to use (see contract below) |
 | `CEREBRO_EMBEDDINGS` | `none` | `none`, `local` (hashed bag-of-words, offline) or `ai-sdk` |
 | `CEREBRO_AI_EMBEDDING_MODEL` | none | Embedding model id; required with `CEREBRO_EMBEDDINGS=ai-sdk` |
 | `CEREBRO_AI_EMBEDDING_DIMENSIONS` | none | Vector length of that model; required with `CEREBRO_EMBEDDINGS=ai-sdk` and checked on every response |
@@ -53,6 +59,75 @@ the worker in `apps/worker/src/main.ts`, and `npm run ai:eval`).
 
 Credentials are read by the provider package from its own variables. Cerebro
 never reads, stores or logs them.
+
+### Anthropic (Claude)
+
+`CEREBRO_AI_PROVIDER=anthropic` builds `AnthropicProvider` (`src/anthropic-provider.ts`)
+on an official SDK client. Credentials use the SDK's standard resolution
+(`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, or an `ant auth login` profile).
+Start-up does not require them: a call without credentials fails as
+`provider_error` and the domain falls back like any other failure. The SDK
+client is created with logging off (so `ANTHROPIC_LOG=debug` cannot print
+request bodies) and no SDK retries (fallback is the domain's job).
+
+Each task is one `client.beta.messages.create` call:
+
+- `model`: `CEREBRO_AI_MODEL` (default `claude-opus-5-5`) or the task's override.
+- No `temperature`, `top_p`, `top_k`, `thinking` or `tool_choice`, and no
+  assistant prefill. Thinking is always on for this model; `output_config.effort`
+  controls its depth.
+- `output_config.format`: a JSON schema derived from the task's output schema
+  by `structuredOutputSchema` (`src/output-schema.ts`). It keeps the keywords
+  structured outputs support (types, `enum`, `const`, `anyOf`, `$ref`,
+  `additionalProperties: false`) and moves lengths, patterns and numeric bounds
+  into descriptions. The response is validated against the full Zod schema
+  afterwards, and callers validate again.
+- `system`: the task's instructions as one block with
+  `cache_control: {type: "ephemeral"}`; the volatile data (question, passages,
+  document, sources) follows in the user turn. Caching only applies once the
+  system prefix reaches the model's minimum cacheable length.
+- `betas: ["server-side-fallback-2026-07-01"]` and `fallbacks: "default"`
+  unless `CEREBRO_AI_REFUSAL_FALLBACK=off`: when Claude declines a request for
+  policy reasons the API retries it on Anthropic's recommended fallback model
+  within the same call. The run records the model that produced the answer.
+  Fallback models are Anthropic models, so the organisation's policy approval
+  (`anthropic`) covers them.
+
+Provisional per-task settings (implementation placeholders to be measured
+with `npm run ai:eval`, not agreed targets):
+
+| Task | Effort | `max_tokens` (thinking + reply) |
+| --- | --- | --- |
+| `answer` | `medium` | 8,000 |
+| `summarize_topics` | `low` | 16,000 |
+| `suggest_perspectives` | `medium` | 16,000 |
+| `propose_revision` | `medium` | 32,000 |
+| `compose` | `medium` | 32,000 |
+
+Responses are read by `stop_reason` before any content:
+
+| `stop_reason` | Result |
+| --- | --- |
+| `end_turn` | Text blocks parsed as JSON and validated against the task schema (`invalid_output` otherwise); thinking blocks are skipped by type |
+| `refusal` (after any fallback) | `answer`: an honest `refused` abstention with no parts or citations. Other tasks: `provider_error`, so the domain falls back |
+| `max_tokens`, `model_context_window_exceeded` | `invalid_output`; truncated JSON is never parsed |
+| anything else | `invalid_output` |
+
+Errors use the SDK's typed classes: `RateLimitError` (429),
+`InternalServerError` (5xx, including 529 overloaded) and `APIConnectionError`
+map to `unavailable`; `APIConnectionTimeoutError` and the task timeout map to
+`timeout`; a caller abort is `aborted`; every other API error (400, 401, 403,
+404, …) is `provider_error`. Messages carry status codes and stop reasons only.
+
+Usage: `inputTokens` counts all input tokens, including cache reads and
+writes, which are also reported as `cacheReadInputTokens` and
+`cacheWriteInputTokens`. After a refusal fallback every attempt in
+`usage.iterations` is summed. `ai_runs` stores input and output tokens;
+the cache split appears in the `ai.run` log line.
+
+Anthropic has no embeddings API. `CEREBRO_EMBEDDINGS` stays `none` or `local`
+with this provider; choosing an embedding source for hybrid retrieval is still
+an open decision.
 
 ### Module contract
 
@@ -119,6 +194,22 @@ indexing, embedding and retrieval code on in-memory PGlite). The console shows
 metrics only; the full report is written to `.data/ai-eval/` (git-ignored) as
 JSON and Markdown and may quote the fictional fixtures. No pass threshold is
 applied: thresholds and the retrieval default are for the user to set.
+
+With `CEREBRO_AI_PROVIDER=anthropic` the answer set also runs against Claude
+when `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` is set (or
+`CEREBRO_AI_EVAL_LIVE=1` for an SDK profile); without credentials Claude is
+skipped and the report says so. The answer set covers the `answer` task only.
+
+```
+npm run ai:live
+```
+
+An opt-in check that every task (`answer`, `compose`, `propose_revision`,
+`suggest_perspectives`, `summarize_topics`) returns schema-valid output from
+Claude with the real request shape. It is skipped unless an Anthropic
+credential is set, prints categories, latency and token counts only, and
+applies no quality threshold. The normal test suite uses a fake SDK client and
+never touches the network.
 
 Logging rule: prompts, model payloads, questions, passages and source text
 never go to logs. `AiRunRecord` and `ai_runs` hold ids, labels, counts, latency
