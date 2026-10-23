@@ -84,7 +84,7 @@ export default async function HistoryPage({
       >
         {withdrawn ? (
           <p role="status" className="mb-6 rounded-md border border-success/30 bg-success-soft px-4 py-3 text-success">
-            The publication was withdrawn. Readers now see a withdrawn notice; no earlier version was promoted.
+            The publication was withdrawn, along with every earlier version. Readers now see a withdrawn notice.
           </p>
         ) : null}
         {errorCode ? (
@@ -138,8 +138,8 @@ export default async function HistoryPage({
               <details className="mt-6 rounded-lg border border-danger/30 p-4">
                 <summary className={cn("cursor-pointer font-medium text-danger", focusRing)}>Withdraw the current publication</summary>
                 <p className="mt-2 text-sm text-fg">
-                  Readers will see a withdrawn notice instead of version {current.revisionNumber}. This can&apos;t be undone, and no earlier
-                  version is promoted. The draft is kept, so you can publish again.
+                  Readers will see a withdrawn notice instead of this brief. Earlier versions are withdrawn too, including pinned links to
+                  them. This can&apos;t be undone. The draft is kept, so you can publish again.
                 </p>
                 <form action={withdrawAction} className="mt-3 flex flex-col gap-3">
                   <input type="hidden" name="company" value={company} />

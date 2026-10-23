@@ -27,17 +27,14 @@ These need the user, not an agent. Implementation should not guess them.
 
 | Item | What is needed | Blocks |
 | --- | --- | --- |
-| Architecture review | Confirm or revise D03–D10, T07, T16–T22 and the second-pass selections T23–T29, all adopted without sign-off to unblock implementation | Everything marked "revisit at architecture review" |
+| Architecture review | Confirm or revise D03–D10 (D15–D17 settled three of its points), T07, T16–T22 and the second-pass selections T23–T29, all adopted without sign-off to unblock implementation | Everything marked "revisit at architecture review" |
 | Open product proposals | Decide P07–P09 and P11–P19, especially P13 (published visibility) and P14 (hierarchy membership), which the access matrix already relies on | Access matrix, library behavior |
-| Admin self-add (D09 accepted risk) | Whether an admin who adds themselves to a team should gain that team's audience access, or whether membership changes by admins need audit or approval | Access rules, audit |
-| Withdrawn revisions | Whether older revisions stay readable by pinned link after the current revision is withdrawn | Publication and link resolution |
-| Q&A cohort minimum (D07) | Confirm or replace the provisional minimum of 3 distinct readers | Engagement and privacy rules |
 | AI provider | **Decided: Anthropic (D12).** Still open: model choices beyond the `claude-opus-5-5` default, evaluation thresholds, and an embedding source (Anthropic has no embeddings API) | The retrieval default (W3.2) |
 | Hosting and region | **Decided: internally on Coolify (D14).** Still open: the backup schedule and off-site copies | Backup schedule |
 | Object storage | Choose the S3-compatible service to run on Coolify | W2.3 |
 | Identity and MCP OAuth | **Decided: Clerk for both (D08, D13).** Still needed: Clerk keys and instance settings | W2.2 |
 | First LLM host | Confirm the first supported host (P17) | W2.2 and W3.1 verification |
-| Retention policy | Set periods for sources, conversations and events, and decide whether audit, published evidence, feedback and backups are covered (P11) | Turning on the W4 retention sweep |
+| Retention policy | **Default decided: keep everything (D18).** Still open: whether audit, published evidence, feedback and backups are covered, and any per-company periods | Turning on the retention sweep for a company |
 | Limits and costs | Set rate limits, AI run and token caps, and the readiness queue-age threshold, or confirm they stay off. Also decide whether the pre-existing cap of 30 reader questions per briefing per hour stays | Turning on W4 limits |
 | Success targets | Agree pilot measures from representative baselines, including latency and AI evaluation thresholds (P12) | Pilot evaluation |
 

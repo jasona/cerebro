@@ -77,7 +77,7 @@ Per D04, sharing requires authentication.
 
 - A link is a locator, not authorization. Opening a link requires a signed-in user who already qualifies through the audience rules or a grant. Possessing the URL alone grants nothing.
 - **Stable links** resolve to the briefing's current publication. If the current publication is withdrawn, the link shows a withdrawn state without revealing content.
-- **Pinned links** resolve to one revision and never grant access to later revisions. If the viewer's grant is revision-scoped, only that revision is available. Withdrawing the current publication does not withdraw earlier revisions: a pinned link to an older, non-withdrawn revision stays readable for its audience. This is current behavior, open for review (D10).
+- **Pinned links** resolve to one revision and never grant access to later revisions. If the viewer's grant is revision-scoped, only that revision is available. Withdrawing the current publication withdraws the brief: every earlier revision is withdrawn too, so pinned links show the withdrawn state (D16). Withdrawing an older, non-current publication affects only that revision.
 - External readers reach briefings only through explicit grants or invitations. They never receive company membership.
 - Link tokens are high entropy, stored as hashes, and support expiry and revocation. Revoking a link does not remove unrelated direct grants.
 - Denied, revoked, expired, and withdrawn states do not disclose protected titles, excerpts, or assets.

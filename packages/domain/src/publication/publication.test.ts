@@ -10,7 +10,7 @@ import {
   withSystemContext,
 } from "@cerebro/database";
 import { BriefingDocument, markdownToDocument, sequentialIds, strategyBriefing, teamPlanBriefing } from "@cerebro/briefing-schema";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { DomainError } from "../errors";
 import { createTestWorld, type TestWorld } from "../testing";
@@ -268,7 +268,7 @@ describe("idempotency and races", () => {
 });
 
 describe("withdrawal", () => {
-  it("clears the current pointer; readers get not_found (withdrawn); no auto-promotion", async () => {
+  it("clears the current pointer and withdraws earlier revisions too (D16); no auto-promotion", async () => {
     const d = await makePublished(w);
     await editHeadline(w, "riley", d.briefingId, "Second revision headline.");
     const p2 = await createPreview(w.h.db, d.ctx, { briefingId: d.briefingId });
@@ -276,15 +276,19 @@ describe("withdrawal", () => {
 
     const res = await withdrawPublication(w.h.db, d.ctx, { briefingId: d.briefingId, publicationId: pub2.publicationId });
     expect(res.clearedCurrent).toBe(true);
+    expect(res.alsoWithdrawn).toBe(1);
     const [b] = await sys((tx) => tx.select().from(briefings).where(eq(briefings.id, d.briefingId)));
     expect(b!.currentPublicationId).toBeNull();
 
     const err = await expectCode(getRevisionDocument(w.h.db, w.ctx("alex"), { briefingId: d.briefingId }), "not_found");
     expect(err.details).toEqual({ reason: "withdrawn" });
     expect(JSON.stringify(err)).not.toContain("Second revision");
-    // Revision 1 is still published but not promoted; pinned reading still works for it.
-    expect((await getRevisionDocument(w.h.db, w.ctx("alex"), { briefingId: d.briefingId, revisionNumber: 1 })).revision.isCurrent).toBe(false);
+    // D16: withdrawing the brief withdraws revision 1 as well; pinned links show the withdrawn state, without content.
+    const pinned1 = await expectCode(getRevisionDocument(w.h.db, w.ctx("alex"), { briefingId: d.briefingId, revisionNumber: 1 }), "not_found");
+    expect(pinned1.details).toEqual({ reason: "withdrawn" });
     await expectCode(getRevisionDocument(w.h.db, w.ctx("alex"), { briefingId: d.briefingId, revisionNumber: 2 }), "not_found");
+    const audits = await sys((tx) => tx.select().from(auditEvents).where(and(eq(auditEvents.targetId, d.briefingId), eq(auditEvents.action, "publication.withdrawn"))));
+    expect(audits).toHaveLength(2);
     // Outsiders learn nothing.
     const outsider = await expectCode(getRevisionDocument(w.h.db, w.ctx("casey"), { briefingId: d.briefingId }), "not_found");
     expect(outsider.details).toBeUndefined();
@@ -297,12 +301,30 @@ describe("withdrawal", () => {
     // Collaborators see the withdrawn flag in history; readers do not see withdrawn entries.
     expect((await listRevisions(w.h.db, d.ctx, d.briefingId)).map((r) => [r.revisionNumber, r.withdrawn])).toEqual([
       [2, true],
-      [1, false],
+      [1, true],
     ]);
     // Readers without a current publication cannot list revisions at all.
     await expectCode(listRevisions(w.h.db, w.ctx("alex"), d.briefingId), "not_found");
     // Only withdraw-capable roles can withdraw.
     await expectCode(withdrawPublication(w.h.db, w.ctx("alex"), { briefingId: d.briefingId, publicationId: d.pub.publicationId }), "not_found");
+  });
+
+  it("withdrawing an older, non-current publication leaves the current one alone; republishing after withdrawal works", async () => {
+    const d = await makePublished(w);
+    await editHeadline(w, "riley", d.briefingId, "Second revision headline.");
+    const p2 = await createPreview(w.h.db, d.ctx, { briefingId: d.briefingId });
+    const pub2 = await publishBriefing(w.h.db, d.ctx, { briefingId: d.briefingId, previewId: p2.previewId });
+    const older = await withdrawPublication(w.h.db, d.ctx, { briefingId: d.briefingId, publicationId: d.pub.publicationId });
+    expect([older.clearedCurrent, older.alsoWithdrawn]).toEqual([false, 0]);
+    expect((await getRevisionDocument(w.h.db, w.ctx("alex"), { briefingId: d.briefingId })).revision.revisionNumber).toBe(2);
+
+    await withdrawPublication(w.h.db, d.ctx, { briefingId: d.briefingId, publicationId: pub2.publicationId });
+    await editHeadline(w, "riley", d.briefingId, "Third revision headline.");
+    const p3 = await createPreview(w.h.db, d.ctx, { briefingId: d.briefingId });
+    await publishBriefing(w.h.db, d.ctx, { briefingId: d.briefingId, previewId: p3.previewId });
+    const current = await getRevisionDocument(w.h.db, w.ctx("alex"), { briefingId: d.briefingId });
+    expect(current.revision.revisionNumber).toBe(3);
+    await expectCode(getRevisionDocument(w.h.db, w.ctx("alex"), { briefingId: d.briefingId, revisionNumber: 1 }), "not_found");
   });
 });
 

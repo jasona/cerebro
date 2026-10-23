@@ -58,7 +58,7 @@ Edits from a connected LLM follow the same revision and withdrawal rules as firs
 
 Edits after publication modify the draft and produce a new revision when released. Existing citations, answers, and feedback retain their original revision context.
 
-Withdrawal removes reader availability without rewriting the content snapshot. Withdrawing the current publication should clear its current pointer and require a deliberate decision before promoting another revision. A withdrawn revision is removed from Q&A, retrieval, and indexing. Earlier, non-withdrawn revisions stay readable by pinned link for their audience; this is current behavior, open for review (D10). Retention or erasure obligations require a separately defined privileged workflow.
+Withdrawal removes reader availability without rewriting the content snapshot. Withdrawing the current publication should clear its current pointer and require a deliberate decision before promoting another revision. A withdrawn revision is removed from Q&A, retrieval, and indexing. Withdrawing the current publication also withdraws every earlier publication of the brief, each audited, so no pinned link stays readable (D16). Retention or erasure obligations require a separately defined privileged workflow.
 
 ## Connected account lifecycle
 

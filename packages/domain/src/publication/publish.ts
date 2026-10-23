@@ -15,7 +15,7 @@ import {
   type Tx,
 } from "@cerebro/database";
 import { canonicalJson, documentDigest, SCHEMA_VERSION } from "@cerebro/briefing-schema";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { assertBriefingCapability } from "../access/index";
 import { recordAudit } from "../audit";
@@ -299,12 +299,17 @@ export interface WithdrawPublicationResult {
   clearedCurrent: boolean;
   /** False when the publication had already been withdrawn. */
   changed: boolean;
+  /** Earlier publications withdrawn with it (D16: withdrawing the current one withdraws the brief). */
+  alsoWithdrawn: number;
 }
 
 /**
  * Withdraw a publication without rewriting its snapshot. Clears the current
  * pointer when it was current; never auto-promotes an earlier revision.
- * Irreversible (the database forbids restoring `withdrawn_at`).
+ * Withdrawing the current publication withdraws the brief (D16): every earlier
+ * publication still active is withdrawn too, so pinned links to older
+ * revisions show the withdrawn state. Irreversible (the database forbids
+ * restoring `withdrawn_at`); publishing again creates a new publication.
  */
 export async function withdrawPublicationInTx(
   tx: Tx,
@@ -331,7 +336,7 @@ export async function withdrawPublicationInTx(
 
   let result: WithdrawPublicationResult;
   if (pub.withdrawnAt !== null) {
-    result = { publicationId: pub.id, withdrawnAt: pub.withdrawnAt, clearedCurrent: false, changed: false };
+    result = { publicationId: pub.id, withdrawnAt: pub.withdrawnAt, clearedCurrent: false, changed: false, alsoWithdrawn: 0 };
   } else {
     const isCurrent = b.currentPublicationId === pub.id;
     // Clear the pointer first so it never references a withdrawn publication.
@@ -357,7 +362,35 @@ export async function withdrawPublicationInTx(
       revisionId: pub.revisionId,
       metadata: { publicationId: pub.id, wasCurrent: isCurrent },
     });
-    result = { publicationId: pub.id, withdrawnAt: updated!.withdrawnAt!, clearedCurrent: isCurrent, changed: true };
+    let alsoWithdrawn = 0;
+    if (isCurrent) {
+      const earlier = await tx
+        .update(publications)
+        .set({ withdrawnAt: sql`now()` })
+        .where(
+          and(
+            eq(publications.organizationId, ctx.organizationId),
+            eq(publications.briefingId, b.id),
+            ne(publications.id, pub.id),
+            isNull(publications.withdrawnAt),
+          ),
+        )
+        .returning({ id: publications.id, revisionId: publications.revisionId });
+      for (const e of earlier) {
+        await tx
+          .delete(retrievalChunks)
+          .where(and(eq(retrievalChunks.organizationId, ctx.organizationId), eq(retrievalChunks.revisionId, e.revisionId)));
+        await recordAudit(tx, ctx, {
+          action: "publication.withdrawn",
+          targetType: "briefing",
+          targetId: b.id,
+          revisionId: e.revisionId,
+          metadata: { publicationId: e.id, wasCurrent: false, withdrawnWith: pub.id },
+        });
+      }
+      alsoWithdrawn = earlier.length;
+    }
+    result = { publicationId: pub.id, withdrawnAt: updated!.withdrawnAt!, clearedCurrent: isCurrent, changed: true, alsoWithdrawn };
   }
   if (opts.operation) await opts.operation(tx, result);
   return result;
