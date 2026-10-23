@@ -435,6 +435,22 @@ describe("operations", () => {
     await other.close();
   });
 
+  it("MCP Apps tools (preview_brief, publish_brief) go through the same rate limit and logging wrapper", async () => {
+    const lines: LogRecord[] = [];
+    process.env.LOG_LEVEL = "debug";
+    setLogSink((r) => lines.push(r));
+    process.env.RATE_LIMIT_MCP_TOOL_PER_CONNECTION = "1/3600";
+    const first = await mcp.call("preview_brief", { briefing_id: crypto.randomUUID() });
+    expect(first.sc.error.code).not.toBe("rate_limited");
+    const second = await mcp.call("publish_brief", { briefing_id: crypto.randomUUID(), preview_id: crypto.randomUUID(), idempotency_key: "k-12345678" });
+    expect(second.sc.error.code).toBe("rate_limited");
+    const tools = lines.filter((l) => l.event === "mcp.tool_call").map((l) => [l.tool, l.code]);
+    expect(tools).toEqual([
+      ["preview_brief", first.sc.error.code],
+      ["publish_brief", "rate_limited"],
+    ]);
+  });
+
   it("logs each tool call with name, outcome and latency, never arguments", async () => {
     const lines: LogRecord[] = [];
     process.env.LOG_LEVEL = "debug";

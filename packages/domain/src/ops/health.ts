@@ -1,4 +1,4 @@
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { loadMigrations, withSystemContext, type Database } from "@cerebro/database";
 import { sql } from "drizzle-orm";
 import { invalidOpsConfig, type Env } from "./config";
@@ -110,9 +110,10 @@ export function isInternalReadinessCaller(request: Request, env: Env = process.e
   if (!token) return false;
   const m = /^Bearer\s+(\S+)\s*$/i.exec(request.headers.get("authorization") ?? "");
   if (!m) return false;
-  const a = Buffer.from(m[1]!);
-  const b = Buffer.from(token);
-  return a.length === b.length && timingSafeEqual(a, b);
+  // Hash both sides to a fixed length so the comparison is constant-time and
+  // does not reveal the token's length.
+  const digest = (s: string) => createHash("sha256").update(s, "utf8").digest();
+  return timingSafeEqual(digest(m[1]!), digest(token));
 }
 
 /**

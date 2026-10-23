@@ -384,18 +384,34 @@ export async function removeMembershipInTx(tx: Tx, ctx: RequestContext, input: {
       metadata: { grantId: g.id, granteeId: userId, role: g.role, reason: "membership_removed" },
     });
   }
+  // MCP connections (dev tokens and OAuth grants) end with the membership too,
+  // so a re-added member's previously authorized hosts do not silently regain
+  // access. OAuth hosts must authorize again (auth_time after revoked_at).
+  const connections = await tx.execute<{ id: string; kind: string }>(sql`
+    update integration_connections set status = 'revoked', revoked_at = now(), updated_at = now()
+    where organization_id = ${ctx.organizationId}::uuid and user_id = ${userId}::uuid and status = 'active'
+    returning id, kind`);
+  for (const c of connections.rows) {
+    await recordAudit(tx, ctx, {
+      action: "connection.revoked",
+      targetType: "integration_connection",
+      targetId: c.id,
+      metadata: { kind: c.kind, userId, reason: "membership_removed" },
+    });
+  }
   await recordAudit(tx, ctx, {
     action: "membership.removed",
     targetType: "membership",
     targetId: userId,
-    metadata: { userId, role: target.role, grantsRevoked: revoked.rows.length },
+    metadata: { userId, role: target.role, grantsRevoked: revoked.rows.length, connectionsRevoked: connections.rows.length },
   });
   // HOOK(cache): invalidate the user's authorization caches once a cache layer exists.
 }
 
 /**
  * Set a company membership to `removed`. Derived department/team access, briefing
- * roles and connection-token authentication all stop on the next request.
+ * roles and MCP connections all stop on the next request; briefing grants and
+ * connections are revoked, so re-adding the member does not revive them.
  */
 export const removeMembership = (db: Database, ctx: RequestContext, input: { userId: string }) =>
   withCtx(db, ctx, (tx, c) => removeMembershipInTx(tx, c, input));

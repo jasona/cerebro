@@ -1,5 +1,5 @@
 import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server";
-import { resolveAuthMode } from "./lib/auth-mode";
+import { clerkMiddlewareOptions, resolveAuthMode } from "./lib/auth-mode";
 
 /**
  * Request proxy (Next 16's renamed middleware).
@@ -14,6 +14,9 @@ import { resolveAuthMode } from "./lib/auth-mode";
  * own bearer credentials (OAuth access tokens or dev connection tokens),
  * which Clerk must not interpret as session tokens.
  *
+ * Clerk session tokens are accepted only when minted for the APP_URL origin
+ * (`authorizedParties`, see auth-mode.ts).
+ *
  * Authorization is NOT enforced here; domain services are the security
  * boundary.
  */
@@ -26,7 +29,7 @@ export async function proxy(req: NextRequest, ev: NextFetchEvent) {
   if (resolveAuthMode(process.env) !== "clerk" || BYPASS_CLERK.test(req.nextUrl.pathname)) return NextResponse.next();
   if (!clerkHandler) {
     const { clerkMiddleware } = await import("@clerk/nextjs/server");
-    clerkHandler = clerkMiddleware() as unknown as Handler;
+    clerkHandler = clerkMiddleware(clerkMiddlewareOptions(process.env)) as unknown as Handler;
   }
   return (await clerkHandler(req, ev)) ?? NextResponse.next();
 }

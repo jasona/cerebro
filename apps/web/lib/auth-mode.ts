@@ -31,3 +31,19 @@ export function resolveAuthMode(env: Record<string, string | undefined> = proces
   if (raw) throw new AuthModeConfigError(`Unknown AUTH_MODE "${raw}". Use "clerk" or "dev".`);
   return production ? "clerk" : "dev";
 }
+
+/**
+ * `clerkMiddleware` options. Clerk session tokens name the frontend origin
+ * that minted them (`azp`); binding them to the `APP_URL` origin stops a
+ * session token from another application on the same Clerk instance being
+ * accepted here. Without `APP_URL` Clerk's default applies.
+ */
+export function clerkMiddlewareOptions(env: Record<string, string | undefined> = process.env): { authorizedParties?: string[] } {
+  const raw = env.APP_URL?.trim();
+  if (!raw) return {};
+  try {
+    return { authorizedParties: [new URL(raw).origin] };
+  } catch {
+    throw new AuthModeConfigError(`APP_URL "${raw}" is not an absolute URL.`);
+  }
+}

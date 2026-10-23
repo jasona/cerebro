@@ -61,9 +61,15 @@ export const getSignInState = cache(async (): Promise<SignInState> => {
 /** The signed-in Cerebro user, or null. Memoised per request. */
 export const getSessionUser = cache(async (): Promise<SessionUser | null> => (await getSignInState()).user);
 
-/** Only allow same-origin relative paths as post-sign-in destinations. */
+/**
+ * Only allow same-origin relative paths as post-sign-in destinations.
+ * Browsers strip tab, CR and LF from URLs and treat `\` as `/`, so any control
+ * character or backslash is refused: `/<TAB>/evil.example` would otherwise
+ * reach `Location` and resolve to `//evil.example`.
+ */
 export function safeNextPath(next: unknown, fallback = "/"): string {
-  if (typeof next !== "string" || !next.startsWith("/") || next.startsWith("//") || next.startsWith("/\\")) {
+  // eslint-disable-next-line no-control-regex
+  if (typeof next !== "string" || !next.startsWith("/") || next.startsWith("//") || /[\u0000-\u001f\u007f\\]/.test(next)) {
     return fallback;
   }
   return next;
