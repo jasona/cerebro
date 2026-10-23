@@ -1,4 +1,13 @@
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client, type ServerSideEncryption } from "@aws-sdk/client-s3";
+import {
+  CreateBucketCommand,
+  DeleteObjectCommand,
+  GetObjectCommand,
+  HeadBucketCommand,
+  PutObjectCommand,
+  S3Client,
+  type BucketLocationConstraint,
+  type ServerSideEncryption,
+} from "@aws-sdk/client-s3";
 import { parseSourceKey, sourceKeyFor, verifySourceBytes, type SourceStore } from "./object-key";
 
 /**
@@ -13,7 +22,9 @@ import { parseSourceKey, sourceKeyFor, verifySourceBytes, type SourceStore } fro
  *   through domain services after an access check.
  * - Immutable: puts send `If-None-Match: *`. A 412 means the object already
  *   exists, and since the key is the content hash that is success. (A service
- *   that ignores the header overwrites with identical bytes.)
+ *   that ignores the header overwrites with identical bytes.) SeaweedFS, the
+ *   in-stack store on Coolify (D25), enforces it: CI's `s3-store` job checks
+ *   that a raw conditional put of an existing key gets 412.
  * - Integrity: `get` verifies the sha256 in the key, so tampering is detected.
  * - Optional server-side encryption (`AES256` or `aws:kms` with a key id).
  */
@@ -95,10 +106,17 @@ export function s3ConfigFromEnv(env: NodeJS.ProcessEnv = process.env): S3SourceS
   if (sse && !SSE_MODES.includes(sse)) errors.push(`CEREBRO_S3_SSE must be one of ${SSE_MODES.join(", ")}`);
   if (sseKmsKeyId && sse !== "aws:kms") errors.push("CEREBRO_S3_SSE_KMS_KEY_ID requires CEREBRO_S3_SSE=aws:kms");
 
-  const accessKeyId = get("AWS_ACCESS_KEY_ID");
-  const secretAccessKey = get("AWS_SECRET_ACCESS_KEY");
-  const sessionToken = get("AWS_SESSION_TOKEN");
-  if (Boolean(accessKeyId) !== Boolean(secretAccessKey)) errors.push("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must be set together");
+  // CEREBRO_S3_* credentials take precedence over the standard AWS_* ones, so
+  // a deployment can point at an external store without touching the
+  // in-stack defaults (deploy/coolify: AWS_* carry the SeaweedFS secrets).
+  const ownKey = get("CEREBRO_S3_ACCESS_KEY_ID");
+  const ownSecret = get("CEREBRO_S3_SECRET_ACCESS_KEY");
+  if (Boolean(ownKey) !== Boolean(ownSecret)) errors.push("CEREBRO_S3_ACCESS_KEY_ID and CEREBRO_S3_SECRET_ACCESS_KEY must be set together");
+  const useOwn = Boolean(ownKey && ownSecret);
+  const accessKeyId = useOwn ? ownKey : get("AWS_ACCESS_KEY_ID");
+  const secretAccessKey = useOwn ? ownSecret : get("AWS_SECRET_ACCESS_KEY");
+  const sessionToken = useOwn ? undefined : get("AWS_SESSION_TOKEN");
+  if (!useOwn && Boolean(accessKeyId) !== Boolean(secretAccessKey)) errors.push("AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY must be set together");
 
   if (errors.length) throw new Error(`CEREBRO_OBJECT_STORE=s3 is misconfigured: ${errors.join("; ")}.`);
 
@@ -184,5 +202,40 @@ export class S3SourceStore implements SourceStore {
     const parsed = parseSourceKey(key, organizationId);
     // S3 DeleteObject succeeds for a missing key, matching the local store.
     await this.client.send(new DeleteObjectCommand({ Bucket: this.config.bucket, Key: this.objectKey(parsed.key) }));
+  }
+}
+
+/**
+ * Make sure the configured bucket exists (deploy step `objects:init`).
+ * `HeadBucket` first, so a key limited to an existing bucket never needs
+ * `CreateBucket`; then `CreateBucket`, treating "already exists/owned" as
+ * success. Idempotent.
+ */
+export async function ensureBucket(store: S3SourceStore): Promise<"exists" | "created"> {
+  const Bucket = store.config.bucket;
+  const exists = async () => {
+    try {
+      await store.client.send(new HeadBucketCommand({ Bucket }));
+      return true;
+    } catch (err) {
+      if (statusOf(err) === 404 || nameOf(err) === "NotFound" || nameOf(err) === "NoSuchBucket") return false;
+      throw err;
+    }
+  };
+  if (await exists()) return "exists";
+  try {
+    // us-east-1 is S3's default location and must not be sent as a constraint.
+    const region = store.config.region;
+    await store.client.send(
+      new CreateBucketCommand({
+        Bucket,
+        ...(region && region !== "us-east-1" ? { CreateBucketConfiguration: { LocationConstraint: region as BucketLocationConstraint } } : {}),
+      }),
+    );
+    return "created";
+  } catch (err) {
+    const name = nameOf(err);
+    if ((name === "BucketAlreadyOwnedByYou" || name === "BucketAlreadyExists") && (await exists())) return "exists";
+    throw err;
   }
 }

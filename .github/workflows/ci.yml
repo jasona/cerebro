@@ -54,6 +54,42 @@ jobs:
       - run: npm ci
       - run: npx vitest run
 
+  # The S3 source store, object backups, bucket creation and the off-site copy
+  # against SeaweedFS (D25), the object store of the Coolify stack. A service
+  # container cannot take arguments, so this uses the image's default
+  # `weed mini` (all components in one process); SeaweedFS reads the admin
+  # credentials from AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY. Keep the tag in
+  # step with deploy/coolify/docker-compose.yml.
+  s3-store:
+    runs-on: ubuntu-latest
+    services:
+      seaweedfs:
+        image: chrislusf/seaweedfs:4.48
+        env:
+          AWS_ACCESS_KEY_ID: ci-access
+          AWS_SECRET_ACCESS_KEY: ci-secret-0123456789
+        ports:
+          - 8333:8333
+        options: >-
+          --health-cmd "curl -fsS -o /dev/null http://127.0.0.1:8333/healthz"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 30
+    env:
+      TEST_S3_ENDPOINT: http://127.0.0.1:8333
+      TEST_S3_ACCESS_KEY_ID: ci-access
+      TEST_S3_SECRET_ACCESS_KEY: ci-secret-0123456789
+      TEST_S3_REGION: us-east-1
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: S3 store and object backups against SeaweedFS (If-None-Match must return 412)
+        run: npx vitest run packages/domain/src/sources/s3-store.integration.test.ts packages/domain/src/sources/backup-s3.integration.test.ts
+
   # The database CLI against PostgreSQL: reset (drop, migrate, seed), then
   # migrate again, which must be a no-op.
   db-cli:
@@ -150,12 +186,14 @@ jobs:
           if-no-files-found: ignore
 
   # Production images (deploy/docker) and the Coolify compose stack
-  # (deploy/coolify/docker-compose.yml): build both images, start postgres ->
-  # migrate (db:provision + db:migrate) -> web and worker with production
-  # settings (NODE_ENV=production, AUTH_MODE=clerk) and dummy credentials
-  # (deploy/coolify/smoke-test.env), then check liveness, readiness, OCR in the
-  # standalone web image, the worker, idempotent migrations, org:bootstrap,
-  # db:backup with the image's pg_dump, and a retention sweep.
+  # (deploy/coolify/docker-compose.yml): build both images, start postgres and
+  # objects (SeaweedFS) -> migrate (db:provision + db:migrate + objects:init)
+  # -> web and worker with production settings (NODE_ENV=production,
+  # AUTH_MODE=clerk) and dummy credentials (deploy/coolify/smoke-test.env), then
+  # check liveness, readiness, OCR in the standalone web image, the worker,
+  # idempotent migrations, org:bootstrap, a source object stored in SeaweedFS,
+  # db:backup (pg_dump + the object, sha256-checked), an off-site copy,
+  # db:restore into a fresh database and bucket, and a retention sweep.
   images:
     runs-on: ubuntu-latest
     env:
@@ -174,11 +212,18 @@ jobs:
       - name: Start the stack (migrate must succeed before web and worker start)
         run: |
           docker compose up --detach web worker
+          test "$(docker inspect --format '{{.State.Health.Status}}' "$(docker compose ps --quiet objects)")" = healthy
           timeout 300 sh -c 'until [ "$(docker inspect --format "{{.State.Health.Status}}" "$(docker compose ps --quiet web)")" = healthy ]; do sleep 3; done'
       - name: Migration ran once and succeeded
         run: |
           docker compose logs migrate
           test "$(docker inspect --format '{{.State.ExitCode}}' "$(docker compose ps --all --quiet migrate)")" = 0
+          docker compose logs migrate | grep -q "Bucket cerebro-sources created"
+      - name: The object store is internal and refuses anonymous or unsigned access
+        run: |
+          test -z "$(docker compose port objects 8333 2>/dev/null)"
+          docker compose exec -T objects sh -c 'test "$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8333/cerebro-sources)" = 403'
+          docker compose exec -T objects sh -c 'test "$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8888/buckets/)" = 401'
       - name: Liveness, readiness and no dev sign-in
         run: docker compose exec -T web node --input-type=module - http < deploy/coolify/smoke-check.mjs
       - name: OCR packages in the standalone web image
@@ -196,10 +241,40 @@ jobs:
           docker compose exec -T worker npm run -s org:bootstrap -- --slug smoke --name "Smoke Test" --owner-email owner@smoke.example | tee bootstrap.log
           grep -q "^Created company smoke" bootstrap.log
           docker compose exec -T worker npm run -s org:bootstrap -- --slug smoke --name "Smoke Test" --owner-email owner@smoke.example | grep -q "nothing changed"
-      - name: db:backup and retention:sweep from the worker container
+          ORG_ID="$(sed -n 's/^Created company smoke (\([0-9a-f-]*\)).*/\1/p' bootstrap.log)"
+          test -n "$ORG_ID"
+          echo "ORG_ID=$ORG_ID" >> "$GITHUB_ENV"
+      - name: A source object is stored in SeaweedFS through the app's S3 store
+        run: docker compose exec -T worker node --import tsx --input-type=module - put "$ORG_ID" < deploy/coolify/smoke-objects.mjs
+      - name: db:backup includes the object (sha256-checked); retention:sweep
         run: |
-          docker compose exec -T worker npm run -s db:backup
+          docker compose exec -T worker npm run -s db:backup | tee backup.log
+          grep -q "objects from the s3 store" backup.log
+          grep -q "No off-site copy made" backup.log
+          BACKUP="$(sed -n 's/^Backup written to \(\/backups\/[^ ]*\) .*/\1/p' backup.log)"
+          test -n "$BACKUP"
+          echo "BACKUP=$BACKUP" >> "$GITHUB_ENV"
+          docker compose exec -T worker node --import tsx --input-type=module - backup "$BACKUP" "$ORG_ID" < deploy/coolify/smoke-objects.mjs
+          docker compose exec -T worker npm run -s db:restore -- "$BACKUP" --check
           docker compose exec -T worker npm run -s retention:sweep
+      # SeaweedFS stands in for the off-site destination (any S3-compatible bucket).
+      - name: Off-site copy of a backup to an S3-compatible bucket
+        run: |
+          docker compose exec -T -e CEREBRO_BACKUP_S3_ENDPOINT=http://objects:8333 -e CEREBRO_BACKUP_S3_BUCKET=cerebro-offsite -e CEREBRO_BACKUP_S3_FORCE_PATH_STYLE=true worker sh -c '
+            export CEREBRO_BACKUP_S3_ACCESS_KEY_ID="$AWS_ACCESS_KEY_ID" CEREBRO_BACKUP_S3_SECRET_ACCESS_KEY="$AWS_SECRET_ACCESS_KEY"
+            CEREBRO_S3_BUCKET=cerebro-offsite npm run -s objects:init && npm run -s db:backup' | tee offsite.log
+          grep -q "^Off-site copy: .* to bucket cerebro-offsite under cerebro-backups/" offsite.log
+          grep -q "^Kept the newest 14 backups; deleted 0" offsite.log
+      - name: db:restore into a fresh database and bucket
+        run: |
+          docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U postgres -c "create database cerebro_restore owner cerebro"
+          docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U postgres -d cerebro_restore -c "create extension vector"
+          docker compose exec -T -e CEREBRO_ALLOW_PRODUCTION_RESTORE=1 -e CEREBRO_S3_BUCKET=cerebro-restore worker sh -c '
+            export DATABASE_URL="${DATABASE_URL%/cerebro}/cerebro_restore"
+            npm run -s objects:init && npm run -s db:restore -- "$1" --yes' sh "$BACKUP" | tee restore.log
+          grep -q "^Wrote back 1 objects" restore.log
+          test "$(docker compose exec -T postgres psql -U postgres -d cerebro_restore -tAc "select count(*) from organizations where slug = 'smoke'")" = 1
+          docker compose exec -T -e CEREBRO_S3_BUCKET=cerebro-restore worker node --import tsx --input-type=module - get "$ORG_ID" < deploy/coolify/smoke-objects.mjs
       - name: Logs
         if: failure()
         run: docker compose logs --no-color

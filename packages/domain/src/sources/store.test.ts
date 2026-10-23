@@ -125,6 +125,18 @@ describe("store factory", () => {
     expect(cfg).toMatchObject({ serverSideEncryption: "aws:kms", sseKmsKeyId: "key-1" });
   });
 
+  it("prefers CEREBRO_S3_* credentials over AWS_* (external store override)", () => {
+    const both = { ...S3_ENV, AWS_ACCESS_KEY_ID: "in-stack", AWS_SECRET_ACCESS_KEY: "in-stack-secret", AWS_SESSION_TOKEN: "t" };
+    expect(s3ConfigFromEnv({ ...both, CEREBRO_S3_ACCESS_KEY_ID: "ext", CEREBRO_S3_SECRET_ACCESS_KEY: "ext-secret" }).credentials).toEqual({
+      accessKeyId: "ext",
+      secretAccessKey: "ext-secret",
+    });
+    expect(s3ConfigFromEnv({ ...both, CEREBRO_S3_ACCESS_KEY_ID: "", CEREBRO_S3_SECRET_ACCESS_KEY: "" }).credentials?.accessKeyId).toBe("in-stack");
+    const half = () => s3ConfigFromEnv({ ...both, CEREBRO_S3_ACCESS_KEY_ID: "EXTKEYVALUE" });
+    expect(half).toThrow("CEREBRO_S3_ACCESS_KEY_ID and CEREBRO_S3_SECRET_ACCESS_KEY must be set together");
+    expect(half).not.toThrow(/EXTKEYVALUE/);
+  });
+
   it("normalizes prefixes", () => {
     expect(normalizePrefix(undefined)).toBe("");
     expect(normalizePrefix(" / ")).toBe("");

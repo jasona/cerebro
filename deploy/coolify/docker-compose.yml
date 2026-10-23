@@ -9,14 +9,16 @@
 # with port 3000 (for example `https://cerebro.example.internal:3000`); no
 # service publishes host ports, Coolify's proxy routes to the container.
 #
-# Start order: postgres (healthy) -> migrate (provision + migrations, must exit
-# 0) -> web and worker. A failed migration stops the deployment before new web
-# or worker containers start.
+# Start order: postgres and objects (healthy) -> migrate (provision +
+# migrations + source bucket, must exit 0) -> web and worker. A failed
+# migration stops the deployment before new web or worker containers start.
 #
 # Variables:
 # - `${VAR:?}` is required: Coolify blocks the deployment until it is set.
 # - `${VAR:-}` is optional and empty by default (empty means "off"/default).
-# - `SERVICE_PASSWORD_*` values are generated once by Coolify and kept.
+# - `${VAR:-value}` has a default you may override.
+# - `SERVICE_USER_*` / `SERVICE_PASSWORD_*` values are generated once by
+#   Coolify and kept; the same name has the same value in every service.
 # Every variable is described in .env.example and the runbook.
 #
 # `exclude_from_hc` is a Coolify key (the one-shot migrate container must not
@@ -39,9 +41,53 @@ services:
       timeout: 5s
       retries: 30
 
+  # Source object storage (D25): SeaweedFS (master, volume, filer and S3
+  # gateway in one process). Internal only: no domain, no published port; web,
+  # worker and migrate reach the S3 gateway at http://objects:8333.
+  # - Credentials: one admin identity from AWS_ACCESS_KEY_ID /
+  #   AWS_SECRET_ACCESS_KEY (SeaweedFS reads these itself), set from the
+  #   Coolify-generated SERVICE_USER_S3 / SERVICE_PASSWORD_S3. Anonymous
+  #   requests are refused.
+  # - WEED_JWT_*: the filer and volume servers' own HTTP APIs (8888, 8080)
+  #   accept only requests signed with this key, so other containers cannot
+  #   bypass the S3 credentials over plain HTTP.
+  # - One volume per new collection (bucket) instead of 7, so a small disk is
+  #   not exhausted by pre-grown volumes; volumes still grow as they fill.
+  # - The image's entrypoint adds `-dir=/data -volume.max=0
+  #   -master.volumeSizeLimitMB=1024` (volume count from free disk space).
+  # Data lives in the `cerebro-objects` volume; db:backup copies every object.
+  objects:
+    image: chrislusf/seaweedfs:4.48
+    restart: unless-stopped
+    command:
+      - server
+      - -s3
+      - -ip=objects
+      - -ip.bind=0.0.0.0
+      - -master.telemetry=false
+      - -s3.port.iceberg=0
+      - -s3.port.lance=0
+    environment:
+      - AWS_ACCESS_KEY_ID=${SERVICE_USER_S3}
+      - AWS_SECRET_ACCESS_KEY=${SERVICE_PASSWORD_S3}
+      - WEED_JWT_SIGNING_KEY=${SERVICE_PASSWORD_64_OBJECTSJWT}
+      - WEED_JWT_SIGNING_READ_KEY=${SERVICE_PASSWORD_64_OBJECTSJWT}
+      - WEED_JWT_FILER_SIGNING_KEY=${SERVICE_PASSWORD_64_OBJECTSJWT}
+      - WEED_JWT_FILER_SIGNING_READ_KEY=${SERVICE_PASSWORD_64_OBJECTSJWT}
+      - WEED_MASTER_VOLUME_GROWTH_COPY_1=1
+    volumes:
+      - cerebro-objects:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:8333/healthz"]
+      interval: 5s
+      timeout: 5s
+      start_period: 20s
+      retries: 30
+
   # One-shot: db:provision (superuser creates the owner role with CREATEROLE
   # and BYPASSRLS, the `cerebro` database and the vector extension), then
-  # db:migrate as that owner. Idempotent; runs on every deployment.
+  # db:migrate as that owner, then objects:init (creates the source bucket if
+  # it does not exist). Idempotent; runs on every deployment.
   migrate:
     build:
       context: ../..
@@ -53,9 +99,28 @@ services:
       - NODE_ENV=production
       - DATABASE_URL=postgres://cerebro:${SERVICE_PASSWORD_CEREBRODB}@postgres:5432/cerebro
       - DATABASE_ADMIN_URL=postgres://postgres:${SERVICE_PASSWORD_POSTGRES}@postgres:5432/postgres
+      # Source object storage (D25): the in-stack SeaweedFS `objects` service by
+      # default. For an external S3-compatible service set CEREBRO_S3_ENDPOINT,
+      # _REGION, _BUCKET, _FORCE_PATH_STYLE and CEREBRO_S3_ACCESS_KEY_ID /
+      # CEREBRO_S3_SECRET_ACCESS_KEY, which take precedence over AWS_* (runbook step 3).
+      - CEREBRO_OBJECT_STORE=s3
+      - CEREBRO_S3_ENDPOINT=${CEREBRO_S3_ENDPOINT:-http://objects:8333}
+      - CEREBRO_S3_REGION=${CEREBRO_S3_REGION:-us-east-1}
+      - CEREBRO_S3_BUCKET=${CEREBRO_S3_BUCKET:-cerebro-sources}
+      - CEREBRO_S3_FORCE_PATH_STYLE=${CEREBRO_S3_FORCE_PATH_STYLE:-true}
+      - CEREBRO_S3_PREFIX=${CEREBRO_S3_PREFIX:-}
+      - CEREBRO_S3_SSE=${CEREBRO_S3_SSE:-}
+      - CEREBRO_S3_SSE_KMS_KEY_ID=${CEREBRO_S3_SSE_KMS_KEY_ID:-}
+      - AWS_ACCESS_KEY_ID=${SERVICE_USER_S3}
+      - AWS_SECRET_ACCESS_KEY=${SERVICE_PASSWORD_S3}
+      - CEREBRO_S3_ACCESS_KEY_ID=${CEREBRO_S3_ACCESS_KEY_ID:-}
+      - CEREBRO_S3_SECRET_ACCESS_KEY=${CEREBRO_S3_SECRET_ACCESS_KEY:-}
       - LOG_LEVEL=${LOG_LEVEL:-info}
     depends_on:
       postgres:
+        condition: service_healthy
+      # Remove this entry (and the `objects` service) when using an external S3 store.
+      objects:
         condition: service_healthy
 
   web:
@@ -77,17 +142,22 @@ services:
       # MCP OAuth resource server: the authorization server's exact issuer. Empty = OAuth off.
       - CEREBRO_OAUTH_ISSUER=${CEREBRO_OAUTH_ISSUER:-}
       - CEREBRO_OAUTH_JWKS_URL=${CEREBRO_OAUTH_JWKS_URL:-}
-      # Source object storage: an S3-compatible service you run (private bucket).
+      # Source object storage (D25): the in-stack SeaweedFS `objects` service by
+      # default. For an external S3-compatible service set CEREBRO_S3_ENDPOINT,
+      # _REGION, _BUCKET, _FORCE_PATH_STYLE and CEREBRO_S3_ACCESS_KEY_ID /
+      # CEREBRO_S3_SECRET_ACCESS_KEY, which take precedence over AWS_* (runbook step 3).
       - CEREBRO_OBJECT_STORE=s3
-      - CEREBRO_S3_ENDPOINT=${CEREBRO_S3_ENDPOINT:?}
-      - CEREBRO_S3_REGION=${CEREBRO_S3_REGION:?}
-      - CEREBRO_S3_BUCKET=${CEREBRO_S3_BUCKET:?}
-      - CEREBRO_S3_FORCE_PATH_STYLE=${CEREBRO_S3_FORCE_PATH_STYLE:-false}
+      - CEREBRO_S3_ENDPOINT=${CEREBRO_S3_ENDPOINT:-http://objects:8333}
+      - CEREBRO_S3_REGION=${CEREBRO_S3_REGION:-us-east-1}
+      - CEREBRO_S3_BUCKET=${CEREBRO_S3_BUCKET:-cerebro-sources}
+      - CEREBRO_S3_FORCE_PATH_STYLE=${CEREBRO_S3_FORCE_PATH_STYLE:-true}
       - CEREBRO_S3_PREFIX=${CEREBRO_S3_PREFIX:-}
       - CEREBRO_S3_SSE=${CEREBRO_S3_SSE:-}
       - CEREBRO_S3_SSE_KMS_KEY_ID=${CEREBRO_S3_SSE_KMS_KEY_ID:-}
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:?}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:?}
+      - AWS_ACCESS_KEY_ID=${SERVICE_USER_S3}
+      - AWS_SECRET_ACCESS_KEY=${SERVICE_PASSWORD_S3}
+      - CEREBRO_S3_ACCESS_KEY_ID=${CEREBRO_S3_ACCESS_KEY_ID:-}
+      - CEREBRO_S3_SECRET_ACCESS_KEY=${CEREBRO_S3_SECRET_ACCESS_KEY:-}
       # AI provider (packages/ai/README.md). Default: deterministic, no model calls.
       - CEREBRO_AI_PROVIDER=${CEREBRO_AI_PROVIDER:-}
       - CEREBRO_AI_PROVIDER_ID=${CEREBRO_AI_PROVIDER_ID:-}
@@ -124,7 +194,8 @@ services:
 
   # Background jobs: indexing, embeddings, extraction and OCR, topic summaries,
   # retention sweeps (only when RETENTION_SWEEP_INTERVAL_SECONDS is set). Also
-  # the container for scheduled tasks (db:backup, retention:sweep).
+  # the container for scheduled tasks: `npm run -s db:backup` at 03:00 and
+  # `npm run -s retention:sweep` at 04:00 (runbook step 8).
   worker:
     build:
       context: ../..
@@ -135,16 +206,22 @@ services:
       - DATABASE_URL=postgres://cerebro:${SERVICE_PASSWORD_CEREBRODB}@postgres:5432/cerebro
       - SESSION_SECRET=${SERVICE_PASSWORD_64_SESSION}
       - ENGAGEMENT_PSEUDONYM_SECRET=${SERVICE_PASSWORD_64_PSEUDONYM}
+      # Source object storage (D25): the in-stack SeaweedFS `objects` service by
+      # default. For an external S3-compatible service set CEREBRO_S3_ENDPOINT,
+      # _REGION, _BUCKET, _FORCE_PATH_STYLE and CEREBRO_S3_ACCESS_KEY_ID /
+      # CEREBRO_S3_SECRET_ACCESS_KEY, which take precedence over AWS_* (runbook step 3).
       - CEREBRO_OBJECT_STORE=s3
-      - CEREBRO_S3_ENDPOINT=${CEREBRO_S3_ENDPOINT:?}
-      - CEREBRO_S3_REGION=${CEREBRO_S3_REGION:?}
-      - CEREBRO_S3_BUCKET=${CEREBRO_S3_BUCKET:?}
-      - CEREBRO_S3_FORCE_PATH_STYLE=${CEREBRO_S3_FORCE_PATH_STYLE:-false}
+      - CEREBRO_S3_ENDPOINT=${CEREBRO_S3_ENDPOINT:-http://objects:8333}
+      - CEREBRO_S3_REGION=${CEREBRO_S3_REGION:-us-east-1}
+      - CEREBRO_S3_BUCKET=${CEREBRO_S3_BUCKET:-cerebro-sources}
+      - CEREBRO_S3_FORCE_PATH_STYLE=${CEREBRO_S3_FORCE_PATH_STYLE:-true}
       - CEREBRO_S3_PREFIX=${CEREBRO_S3_PREFIX:-}
       - CEREBRO_S3_SSE=${CEREBRO_S3_SSE:-}
       - CEREBRO_S3_SSE_KMS_KEY_ID=${CEREBRO_S3_SSE_KMS_KEY_ID:-}
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:?}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:?}
+      - AWS_ACCESS_KEY_ID=${SERVICE_USER_S3}
+      - AWS_SECRET_ACCESS_KEY=${SERVICE_PASSWORD_S3}
+      - CEREBRO_S3_ACCESS_KEY_ID=${CEREBRO_S3_ACCESS_KEY_ID:-}
+      - CEREBRO_S3_SECRET_ACCESS_KEY=${CEREBRO_S3_SECRET_ACCESS_KEY:-}
       - CEREBRO_AI_PROVIDER=${CEREBRO_AI_PROVIDER:-}
       - CEREBRO_AI_PROVIDER_ID=${CEREBRO_AI_PROVIDER_ID:-}
       - CEREBRO_AI_SDK_MODULE=${CEREBRO_AI_SDK_MODULE:-}
@@ -160,7 +237,19 @@ services:
       - CEREBRO_OCR=${CEREBRO_OCR:-}
       - CEREBRO_OCR_LANGUAGES=${CEREBRO_OCR_LANGUAGES:-}
       - RETENTION_SWEEP_INTERVAL_SECONDS=${RETENTION_SWEEP_INTERVAL_SECONDS:-}
+      # Backups (D26): db:backup keeps the newest CEREBRO_BACKUP_KEEP (default
+      # 14) in /backups and, when CEREBRO_BACKUP_S3_ENDPOINT and _BUCKET are
+      # set, uploads each backup to that S3-compatible bucket (off-site copy).
       - CEREBRO_BACKUP_DIR=/backups
+      - CEREBRO_BACKUP_KEEP=${CEREBRO_BACKUP_KEEP:-14}
+      - CEREBRO_BACKUP_S3_ENDPOINT=${CEREBRO_BACKUP_S3_ENDPOINT:-}
+      - CEREBRO_BACKUP_S3_REGION=${CEREBRO_BACKUP_S3_REGION:-}
+      - CEREBRO_BACKUP_S3_BUCKET=${CEREBRO_BACKUP_S3_BUCKET:-}
+      - CEREBRO_BACKUP_S3_PREFIX=${CEREBRO_BACKUP_S3_PREFIX:-}
+      - CEREBRO_BACKUP_S3_FORCE_PATH_STYLE=${CEREBRO_BACKUP_S3_FORCE_PATH_STYLE:-}
+      - CEREBRO_BACKUP_S3_SSE=${CEREBRO_BACKUP_S3_SSE:-}
+      - CEREBRO_BACKUP_S3_ACCESS_KEY_ID=${CEREBRO_BACKUP_S3_ACCESS_KEY_ID:-}
+      - CEREBRO_BACKUP_S3_SECRET_ACCESS_KEY=${CEREBRO_BACKUP_S3_SECRET_ACCESS_KEY:-}
       - LOG_LEVEL=${LOG_LEVEL:-info}
     volumes:
       - cerebro-backups:/backups
@@ -173,3 +262,4 @@ services:
 volumes:
   cerebro-postgres: {}
   cerebro-backups: {}
+  cerebro-objects: {}
