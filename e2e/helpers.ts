@@ -13,6 +13,7 @@ export const USERS = {
 } as const;
 export type UserKey = keyof typeof USERS;
 
+/** Must match playwright.config.ts (E2E_PORT, default 3400). */
 export const BASE_URL = `http://localhost:${process.env.E2E_PORT ?? 3400}`;
 export const STRATEGY = "/c/acme/b/our-next-chapter-a-focused-move-upmarket";
 export const STRATEGY_TITLE = "Our next chapter: a focused move upmarket.";

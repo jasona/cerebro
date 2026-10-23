@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig, devices } from "@playwright/test";
 
@@ -7,8 +8,11 @@ import { defineConfig, devices } from "@playwright/test";
  * single-process and tests share seeded state, so everything runs on one
  * worker in file order.
  *
- * Run: `npm run test:e2e` (or `npx playwright test`). Requires Chromium at
- * /usr/bin/chromium (override with PLAYWRIGHT_CHROMIUM_PATH).
+ * Run: `npm run test:e2e` (or `npx playwright test`). Uses Chromium at
+ * PLAYWRIGHT_CHROMIUM_PATH, else /usr/bin/chromium when present, else
+ * Playwright's bundled Chromium (`npx playwright install chromium`).
+ * E2E_PORT overrides the port (default 3400). With DATABASE_URL set, the
+ * server and the reset run against that PostgreSQL database instead.
  */
 const repoRoot = resolve(import.meta.dirname);
 // E2E_PORT lets several checkouts run the suite side by side.
@@ -16,7 +20,8 @@ const PORT = Number(process.env.E2E_PORT ?? 3400);
 const BASE_URL = `http://localhost:${PORT}`;
 const pgliteDir = resolve(repoRoot, ".data", "pglite-e2e");
 const objectsDir = resolve(repoRoot, ".data", "objects-e2e");
-const executablePath = process.env.PLAYWRIGHT_CHROMIUM_PATH ?? "/usr/bin/chromium";
+const executablePath =
+  process.env.PLAYWRIGHT_CHROMIUM_PATH ?? (existsSync("/usr/bin/chromium") ? "/usr/bin/chromium" : undefined);
 
 export default defineConfig({
   testDir: "./e2e",

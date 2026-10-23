@@ -75,6 +75,10 @@ afterAll(async () => {
 });
 
 describe("migrations", () => {
+  it("run on the configured test backend", () => {
+    expect(h.kind).toBe(process.env.TEST_DATABASE_URL ? "postgres" : "pglite");
+  });
+
   it("are idempotent", async () => {
     expect(await migrate(h)).toEqual([]);
     const rows = await h.db.execute<{ id: string }>(sql`select id from schema_migrations order by id`);
@@ -122,6 +126,31 @@ describe("tenant isolation under cerebro_app", () => {
       sql`select current_user role, app_current_org()::text o`,
     );
     expect(after.rows[0]).toEqual({ role: "postgres", o: null });
+  });
+
+  it("does not leak role or settings to later queries on pooled connections", async () => {
+    // On Postgres these run on several pooled connections; each must return to
+    // the owner role with empty app.* settings once its transaction ends.
+    await Promise.all(
+      Array.from({ length: 8 }, (_, i) =>
+        withAuthContext(h.db, { userId: seed.users.riley, organizationId: i % 2 ? acme : globex }, (tx) =>
+          tx.execute(sql`select pg_sleep(0.01)`),
+        ),
+      ),
+    );
+    await expect(
+      withAuthContext(h.db, { userId: seed.users.riley, organizationId: acme }, async () => {
+        throw new Error("abort");
+      }),
+    ).rejects.toThrow("abort");
+    const rows = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        h.db.execute<{ role: string; u: string | null; o: string | null }>(
+          sql`select current_user role, app_current_user()::text u, app_current_org()::text o, pg_sleep(0.01)::text`,
+        ),
+      ),
+    );
+    for (const r of rows) expect(r.rows[0]).toMatchObject({ role: "postgres", u: null, o: null });
   });
 
   it("cross-tenant select returns nothing", async () => {

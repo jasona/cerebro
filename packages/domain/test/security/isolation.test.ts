@@ -249,15 +249,17 @@ describe("draft-only fields and candidate evidence", () => {
 
   it("restricted titles never appear in error messages or details", async () => {
     const p = await restrictedBrief();
+    // Thunks, so each call starts only after the previous one settled: a
+    // rejected promise created early would be reported as unhandled.
     for (const call of [
-      getBriefingMeta(w.h.db, w.ctx("jordan"), p.briefingId),
-      getRevisionDocument(w.h.db, w.ctx("jordan"), { briefingId: p.briefingId }),
-      listRevisions(w.h.db, w.ctx("jordan"), p.briefingId),
-      askQuestion(w.h.db, w.ctx("jordan"), { briefingId: p.briefingId, question: "What is this about?" }),
-      submitFeedback(w.h.db, w.ctx("jordan"), { briefingId: p.briefingId, revisionNumber: 1, type: "comment", text: "x" }),
-      getMyThreads(w.h.db, w.ctx("jordan"), p.briefingId),
+      () => getBriefingMeta(w.h.db, w.ctx("jordan"), p.briefingId),
+      () => getRevisionDocument(w.h.db, w.ctx("jordan"), { briefingId: p.briefingId }),
+      () => listRevisions(w.h.db, w.ctx("jordan"), p.briefingId),
+      () => askQuestion(w.h.db, w.ctx("jordan"), { briefingId: p.briefingId, question: "What is this about?" }),
+      () => submitFeedback(w.h.db, w.ctx("jordan"), { briefingId: p.briefingId, revisionNumber: 1, type: "comment", text: "x" }),
+      () => getMyThreads(w.h.db, w.ctx("jordan"), p.briefingId),
     ]) {
-      const e = await call.then(
+      const e = await call().then(
         (v) => ({ message: "", details: v }),
         (err: { message: string; details?: unknown }) => err,
       );
