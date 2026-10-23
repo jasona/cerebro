@@ -35,9 +35,10 @@ RUN npm ci --no-audit --no-fund --omit=dev --workspace=@cerebro/worker
 FROM ${NODE_IMAGE} AS worker
 # pg_dump/pg_restore for db:backup and db:restore. Debian trixie ships the
 # PostgreSQL 17 client, matching the pgvector/pgvector:pg17 server; pg_dump
-# must not be older than the server.
+# must not be older than the server. Extraction jobs (OCR) run here in
+# production, so the image also needs a base font set for PDF page rendering.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends postgresql-client \
+ && apt-get install -y --no-install-recommends postgresql-client fonts-dejavu-core \
  && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production \
     CEREBRO_BACKUP_DIR=/backups

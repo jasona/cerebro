@@ -42,6 +42,11 @@ RUN npm run build \
 
 # ---------------------------------------------------------------------------
 FROM ${NODE_IMAGE} AS web
+# A base font set: the slim image has none, so canvas (PDF page rendering for
+# OCR) would draw text in non-embedded standard fonts as blank.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends fonts-dejavu-core \
+ && rm -rf /var/lib/apt/lists/*
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     PORT=3000 \

@@ -183,6 +183,8 @@ jobs:
         run: docker compose exec -T web node --input-type=module - http < deploy/coolify/smoke-check.mjs
       - name: OCR packages in the standalone web image
         run: docker compose exec -T web node --input-type=module - ocr < deploy/coolify/smoke-check.mjs
+      - name: OCR in the worker image (extraction jobs run there in production)
+        run: docker compose exec -T worker node --input-type=module - ocr package.json < deploy/coolify/smoke-check.mjs
       - name: Worker is running
         run: |
           timeout 60 sh -c 'until docker compose logs worker | grep -q "\"event\":\"worker.started\""; do sleep 2; done'

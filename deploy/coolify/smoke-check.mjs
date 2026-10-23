@@ -3,11 +3,13 @@
  *
  *   docker compose exec -T web node --input-type=module - http < deploy/coolify/smoke-check.mjs
  *   docker compose exec -T web node --input-type=module - ocr  < deploy/coolify/smoke-check.mjs
+ *   docker compose exec -T worker node --input-type=module - ocr package.json < deploy/coolify/smoke-check.mjs
  *
  * `http`: liveness, readiness (summary and token-gated details: database
  * reachable, migrations current) and that the dev sign-in is not served.
- * `ocr`: the packages copied into the standalone server (OCR worker, WASM
- * core, English data, native canvas) load and recognise text.
+ * `ocr`: the OCR packages (OCR worker, WASM core, English data, native
+ * canvas and system fonts) load and recognise text. Packages resolve from the
+ * file given as the next argument (default: the standalone web server).
  */
 import { createRequire } from "node:module";
 import { dirname, join } from "node:path";
@@ -37,7 +39,7 @@ if (mode === "http") {
   const devSignIn = await fetch(`${base}/dev/sign-in`, { redirect: "manual" });
   check(devSignIn.status !== 200, `dev sign-in not served in production (${devSignIn.status})`);
 } else if (mode === "ocr") {
-  const require = createRequire(join(process.cwd(), "apps/web/server.js"));
+  const require = createRequire(join(process.cwd(), process.argv[3] ?? "apps/web/server.js"));
   const { createCanvas } = require("@napi-rs/canvas");
   const tesseract = require("tesseract.js");
   const eng = require("@tesseract.js-data/eng");
