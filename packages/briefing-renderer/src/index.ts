@@ -38,6 +38,7 @@ export {
   type EvidenceMarkersProps,
 } from "./evidence";
 export { formatDate, formatNumber, formatValue } from "./format";
+export { KIND_LABEL, REQUEST_LABEL } from "./labels";
 export { BriefingOutline, OPEN_QUESTIONS_ID, type BriefingOutlineProps } from "./outline";
 export { briefingWordCount, countWords, estimateReadingMinutes, formatReadingTime } from "./reading-time";
 export { parseInline, RichText, richTextToPlain, safeHref, splitParagraphs, type InlineNode, type RichTextProps } from "./rich-text";

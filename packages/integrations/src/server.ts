@@ -47,9 +47,11 @@ import {
   type DraftPatchOp,
   type RequestContext,
 } from "@cerebro/domain";
+import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { describeAudience, evidenceLines, previewText } from "./format";
+import { gateUiMetadataOnCapabilities, MCP_APPS_SERVER_CAPABILITY, previewUiToolMeta, registerPreviewUi } from "./apps";
+import { describeAudience, evidenceLines, previewFields, previewText } from "./format";
 import { guardDocumentEvidence, mergeHandoffIntoDraft } from "./merge";
 import { fail, ok, toToolError } from "./results";
 
@@ -123,7 +125,12 @@ function splitIssues(issues: DocumentIssue[]) {
 
 export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOptions): McpServer {
   const base = appUrl.replace(/\/+$/, "");
-  const server = new McpServer({ name: "cerebro", version: "0.1.0" }, { instructions: SERVER_INSTRUCTIONS });
+  const server = new McpServer(
+    { name: "cerebro", version: "0.1.0" },
+    { instructions: SERVER_INSTRUCTIONS, capabilities: { extensions: MCP_APPS_SERVER_CAPABILITY } },
+  );
+  // MCP Apps inline preview (T14): the UI resource, linked from preview_brief and publish_brief.
+  registerPreviewUi(server);
 
   const urls = (canonicalPath: string) => ({
     canonical_url: `${base}${canonicalPath}`,
@@ -545,7 +552,8 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
   );
 
   // -------------------------------------------------------------------------
-  server.registerTool(
+  const previewTool = registerAppTool(
+    server,
     "preview_brief",
     {
       title: "Preview a Cerebro brief before publishing",
@@ -556,6 +564,7 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
         expected_version: z.number().int().min(1).optional().describe("Fail with a conflict if the draft is no longer at this version."),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+      _meta: previewUiToolMeta(),
     },
     ({ briefing_id, expected_version }) =>
       run(async () => {
@@ -569,6 +578,7 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
           briefing_id: p.briefingId,
           draft_version: p.draftVersion,
           title: p.document.title,
+          ...previewFields(p.document),
           home: p.home,
           audience: p.audience,
           audience_statement: describeAudience(p.audience),
@@ -590,7 +600,8 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
   );
 
   // -------------------------------------------------------------------------
-  server.registerTool(
+  const publishTool = registerAppTool(
+    server,
     "publish_brief",
     {
       title: "Publish a reviewed Cerebro brief",
@@ -606,6 +617,10 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
         idempotency_key: IdempotencyKey,
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      // Renders the published confirmation inline. Visible to the model and to the preview
+      // UI (default visibility): the UI's Publish control calls this same tool, so the
+      // preview binding is enforced identically for both callers.
+      _meta: previewUiToolMeta(),
     },
     ({ briefing_id, preview_id, change_summary, idempotency_key }) =>
       run(async () => {
@@ -695,5 +710,6 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
       }),
   );
 
+  gateUiMetadataOnCapabilities(server, [previewTool, publishTool]);
   return server;
 }

@@ -5,6 +5,7 @@ import { BlockFrame } from "./blocks";
 import { buildContext, type RenderContext, type RenderOptions } from "./context";
 import { EvidenceList } from "./evidence";
 import { formatDate } from "./format";
+import { KIND_LABEL, REQUEST_LABEL } from "./labels";
 import { OPEN_QUESTIONS_ID } from "./outline";
 import { RichText } from "./rich-text";
 
@@ -39,19 +40,6 @@ export interface BriefingViewProps extends RenderOptions {
   className?: string;
 }
 
-const KIND_LABEL: Record<BriefingDocument["kind"], string> = {
-  strategy: "Strategy briefing",
-  decision: "Decision briefing",
-  plan: "Plan",
-  update: "Update",
-};
-
-const REQUEST_LABEL: Record<BriefingDocument["request"]["type"], string> = {
-  decision: "The decision",
-  approval: "Approval requested",
-  input: "Input requested",
-  awareness: "For your awareness",
-};
 
 const eyebrow = "text-xs font-medium tracking-[0.14em] text-muted uppercase";
 
