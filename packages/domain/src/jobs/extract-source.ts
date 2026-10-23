@@ -87,7 +87,7 @@ export async function handleExtractSource(db: Database, job: Job): Promise<void>
   if (src.objectKey) {
     let bytes: Uint8Array;
     try {
-      bytes = await getSourceStore().get(src.objectKey);
+      bytes = await getSourceStore().get(ctx.organizationId, src.objectKey);
     } catch {
       // Storage may be temporarily unavailable: retry with backoff.
       throw new JobError("storage_unavailable", true);

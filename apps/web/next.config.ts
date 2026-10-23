@@ -12,6 +12,7 @@ const config: NextConfig = {
     "@cerebro/integrations",
   ],
   // Native/WASM server dependencies are loaded from node_modules at runtime.
+<<<<<<< HEAD
   serverExternalPackages: [
     "@electric-sql/pglite",
     "@electric-sql/pglite-pgvector",
@@ -25,6 +26,9 @@ const config: NextConfig = {
     "@tesseract.js-data/eng",
     "@napi-rs/canvas",
   ],
+=======
+  serverExternalPackages: ["@electric-sql/pglite", "@electric-sql/pglite-pgvector", "pg", "mammoth", "unpdf", "jszip", "@aws-sdk/client-s3"],
+>>>>>>> worktree-agent-a85a0080b9acbbce6
   poweredByHeader: false,
   experimental: { serverActions: { bodySizeLimit: "20mb" } },
 };

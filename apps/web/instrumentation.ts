@@ -6,7 +6,9 @@
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
   const { getDatabase, runJobsInProcess } = await import("@cerebro/database");
-  const { startInProcessJobRunner } = await import("@cerebro/domain");
+  const { assertSourceStoreConfig, startInProcessJobRunner } = await import("@cerebro/domain");
+  // Fail fast on a misconfigured object store (CEREBRO_OBJECT_STORE=s3 without its settings).
+  assertSourceStoreConfig();
   const handle = await getDatabase();
   if (runJobsInProcess(handle)) startInProcessJobRunner(handle.db, { intervalMs: 1000 });
 }
