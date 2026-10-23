@@ -314,7 +314,7 @@ export async function requestPerspectiveSuggestions(
       ? await tx
           .insert(briefingSuggestions)
           .values(
-            valid.map((v) => ({
+            valid.map((v, i) => ({
               organizationId: c.organizationId,
               briefingId: input.briefingId,
               kind: "perspective" as const,
@@ -324,8 +324,9 @@ export async function requestPerspectiveSuggestions(
               model,
               aiRunId,
               createdBy: c.userId,
-              // Per-row clock so listing keeps the provider's order.
-              createdAt: sql`clock_timestamp()`,
+              // Listing orders by created_at; rows of one insert can share a clock
+              // reading, so offset each by its position to keep the provider's order.
+              createdAt: sql`clock_timestamp() + make_interval(secs => ${i / 1_000_000})`,
             })),
           )
           .returning()
