@@ -867,6 +867,8 @@ export const aiRuns = pgTable(
   },
   (t) => [
     unique("ai_runs_org_id_key").on(t.organizationId, t.id),
+    // Migration 0008: usage windows per organization.
+    index("ai_runs_org_created_idx").on(t.organizationId, t.createdAt),
     check("ai_runs_status_check", oneOf(t.status, AI_RUN_STATUSES)),
   ],
 );
