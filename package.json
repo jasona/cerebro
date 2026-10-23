@@ -22,6 +22,7 @@
     "perf": "tsx packages/domain/src/cli/perf.ts",
     "typecheck": "node scripts/typecheck.mjs",
     "ai:eval": "tsx scripts/ai-eval.ts",
+    "ai:live": "CEREBRO_AI_LIVE=1 vitest run packages/ai/src/anthropic-provider.live.test.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test"

@@ -2,9 +2,14 @@ import { AiError } from "./errors";
 import type { AiTask, AiTaskName, TaskInput, TaskOutput } from "./tasks";
 
 export interface AiUsage {
+  /** All input tokens processed, including cache reads and writes when the provider reports them. */
   inputTokens?: number;
   outputTokens?: number;
   totalTokens?: number;
+  /** Part of `inputTokens` served from the provider's prompt cache. */
+  cacheReadInputTokens?: number;
+  /** Part of `inputTokens` written to the provider's prompt cache. */
+  cacheWriteInputTokens?: number;
 }
 
 export interface RunOptions {

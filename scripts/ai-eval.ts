@@ -17,7 +17,7 @@
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
-import { allCases, createAiFromEnv, describeAiSetup, evaluate, type EvalReport } from "@cerebro/ai";
+import { allCases, anthropicCredentialsPresent, AnthropicProvider, createAiFromEnv, describeAiSetup, evaluate, type EvalReport } from "@cerebro/ai";
 import { evaluateRetrieval, type RankMetrics, type RetrievalEvalReport } from "../packages/domain/src/quality/retrieval-benchmark";
 
 const repoRoot = resolve(import.meta.dirname, "..");
@@ -39,7 +39,13 @@ function metricsRow(name: string, m: RankMetrics): string {
   return `| ${name} | ${m.queries} | ${m.hitAt1.toFixed(3)} | ${m.recallAt3.toFixed(3)} | ${m.recallAt5.toFixed(3)} | ${m.mrr.toFixed(3)} |`;
 }
 
-function markdown(started: Date, setup: Record<string, string | number | null>, answers: (EvalReport & { durationMs: number })[], retrieval: RetrievalEvalReport | { error: string }): string {
+function markdown(
+  started: Date,
+  setup: Record<string, string | number | null>,
+  answers: (EvalReport & { durationMs: number })[],
+  retrieval: RetrievalEvalReport | { error: string },
+  skipped: string[],
+): string {
   const lines: string[] = [
     "# Cerebro AI evaluation",
     "",
@@ -57,6 +63,7 @@ function markdown(started: Date, setup: Record<string, string | number | null>, 
     "| --- | --- | --- | --- | --- | --- | --- |",
     ...answers.map((a) => `| ${a.provider} | ${a.model} | ${a.results.length} | ${a.passed} | ${a.failed} | ${a.safetyFailures.length} | ${a.durationMs} ms |`),
     "",
+    ...(skipped.length ? [`Skipped (no credentials): ${skipped.join(", ")}`, ""] : []),
   ];
   for (const a of answers) {
     lines.push(`### ${a.provider} by category`, "", "| Category | Passed | Total |", "| --- | --- | --- |");
@@ -111,7 +118,16 @@ async function main(): Promise<number> {
   console.log(`ai:eval providers=${config.providers} embeddings=${config.embeddings ?? "none"} cases=${allCases().length}`);
 
   const answers: (EvalReport & { durationMs: number })[] = [];
+  const skipped: string[] = [];
   for (const provider of setup.providers) {
+    // Claude runs only when a credential is present (or CEREBRO_AI_EVAL_LIVE=1
+    // for an `ant auth login` profile); otherwise skip it cleanly instead of
+    // recording a run of authentication failures.
+    if (provider instanceof AnthropicProvider && !anthropicCredentialsPresent(process.env) && process.env.CEREBRO_AI_EVAL_LIVE !== "1") {
+      skipped.push(provider.id);
+      console.log(`answers provider=${provider.id} skipped: no ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN (set CEREBRO_AI_EVAL_LIVE=1 to use an SDK profile)`);
+      continue;
+    }
     const t = performance.now();
     const report = await evaluate(provider);
     const durationMs = Math.round(performance.now() - t);
@@ -148,8 +164,8 @@ async function main(): Promise<number> {
   mkdirSync(outDir, { recursive: true });
   const stamp = started.toISOString().replace(/[:.]/g, "-");
   const base = join(outDir, `ai-eval-${stamp}`);
-  writeFileSync(`${base}.json`, `${JSON.stringify({ startedAt: started.toISOString(), configuration: config, answers, retrieval }, null, 2)}\n`);
-  writeFileSync(`${base}.md`, markdown(started, config, answers, retrieval));
+  writeFileSync(`${base}.json`, `${JSON.stringify({ startedAt: started.toISOString(), configuration: config, answers, skipped, retrieval }, null, 2)}\n`);
+  writeFileSync(`${base}.md`, markdown(started, config, answers, retrieval, skipped));
   console.log(`report: ${relative(repoRoot, base)}.json and .md (no threshold applied)`);
   return 0;
 }

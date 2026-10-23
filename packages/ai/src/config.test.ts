@@ -27,7 +27,16 @@ const importer: ModuleImporter = async (spec) => {
 
 describe("readAiEnv", () => {
   it("defaults to the deterministic provider, no embeddings and full-text retrieval", () => {
-    expect(readAiEnv({})).toEqual({ provider: "deterministic", providerId: "ai-sdk", sdkExport: "default", embeddings: "none", retrievalMode: "fts" });
+    expect(readAiEnv({})).toEqual({
+      provider: "deterministic",
+      providerId: "ai-sdk",
+      sdkExport: "default",
+      taskModels: {},
+      taskEffort: {},
+      refusalFallback: true,
+      embeddings: "none",
+      retrievalMode: "fts",
+    });
   });
 
   it("rejects unknown values and incomplete ai-sdk configuration", () => {
