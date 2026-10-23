@@ -2,7 +2,7 @@
 
 Interactive, evidence-backed executive briefings. Planning documents live in [`llm-docs/`](llm-docs/README.md); agent guidance is in [`AGENTS.md`](AGENTS.md).
 
-This is a first implementation pass for local testing. It is not production-ready: identity uses a dev sign-in, MCP uses dev connection tokens instead of OAuth, and no AI vendor is configured (a deterministic local provider answers from published content only).
+This is a local-testing build. It is not production-ready. Production pieces (Clerk sign-in, MCP OAuth, S3-compatible storage, an AI provider, rate limits and retention) are built but unconfigured, because no vendor, limit or retention period has been chosen. Locally it uses a dev sign-in, dev MCP connection tokens, a deterministic AI provider that answers only from published content, and the filesystem.
 
 ## Quick start
 
@@ -66,6 +66,16 @@ TEST_S3_ENDPOINT=http://127.0.0.1:9100 TEST_S3_ACCESS_KEY_ID=… TEST_S3_SECRET_
    ```
 
    Ask your LLM: "Turn this into a Cerebro brief for the Platform team. Make it visible to the company." The tools create a private draft, show a preview with home and audience, and publish only when you explicitly ask. See [`packages/integrations/README.md`](packages/integrations/README.md). ChatGPT needs OAuth and a public URL, so it cannot connect with dev tokens.
+
+## Production configuration (unconfigured by default)
+
+Every setting is documented in `.env.example` and `llm-docs/IMPLEMENTATION_GUIDE.md`. Nothing below has a vendor default.
+
+- **Web sign-in:** `AUTH_MODE=clerk` with `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`. First sign-in needs a pending invitation for the verified email. `AUTH_MODE=dev` is refused when `NODE_ENV=production`.
+- **MCP OAuth:** set `CEREBRO_OAUTH_ISSUER` to the chosen authorization server's issuer, and `APP_URL` to the public HTTPS URL, which defines the token audience. Metadata is served at `/.well-known/oauth-protected-resource`. See `packages/integrations/README.md`.
+- **AI provider:** `CEREBRO_AI_PROVIDER=ai-sdk`, `CEREBRO_AI_SDK_MODULE` (an installed AI SDK provider package) and `CEREBRO_AI_MODEL`. Each organization must allow the provider in its settings before its data is sent there. `npm run ai:eval` writes answer and retrieval metrics to `.data/ai-eval/`. See `packages/ai/README.md`.
+- **Embeddings and retrieval:** `CEREBRO_EMBEDDINGS` (`none`, `local` or `ai-sdk`) and `CEREBRO_RETRIEVAL_MODE` (`fts`, the default, or `hybrid`).
+- **Object storage:** see "Source object storage" above.
 
 ## Operations
 
