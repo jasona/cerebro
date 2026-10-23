@@ -1,6 +1,6 @@
 # Project vision
 
-**Status:** Product direction from the project brief. The initial audience (D03) was adopted 2026-10-22 to unblock implementation, at the user's direction to proceed on the planned defaults; revisit at architecture review.
+**Status:** Product direction from the project brief. The initial audience (D03) was adopted 2026-10-22 to unblock implementation, at the user's direction to proceed on the planned defaults; revisit at architecture review. **Approved by the user on 2026-10-23 (D19).**
 
 ## Purpose
 

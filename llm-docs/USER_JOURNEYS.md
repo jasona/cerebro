@@ -1,6 +1,6 @@
 # Primary user journeys
 
-**Status:** Proposed workflows. D03–D07 and D09 were adopted 2026-10-22 to unblock implementation, at the user's direction to proceed on the planned defaults; revisit at architecture review.
+**Status:** Proposed workflows. D03–D07 and D09 were adopted 2026-10-22 to unblock implementation, at the user's direction to proceed on the planned defaults; revisit at architecture review. **Approved by the user on 2026-10-23 (D19).**
 
 The primary authoring journey starts in the executive's existing LLM. The flows below support both that entry point and Cerebro's first-party studio. See [LLM_INTEGRATION.md](LLM_INTEGRATION.md).
 

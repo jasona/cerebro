@@ -1,6 +1,6 @@
 # Access matrix
 
-**Status:** Phase 0 access matrix. Adopted 2026-10-22 to unblock implementation, at the user's direction to proceed on the planned defaults; revisit at architecture review. It applies D03–D05, D07, D09, and D10 in [RISKS_AND_DECISIONS.md](RISKS_AND_DECISIONS.md) and the proposed visibility defaults P13–P16.
+**Status:** Phase 0 access matrix. Adopted 2026-10-22 to unblock implementation, at the user's direction to proceed on the planned defaults; revisit at architecture review. It applies D03–D05, D07, D09, and D10 in [RISKS_AND_DECISIONS.md](RISKS_AND_DECISIONS.md) and the proposed visibility defaults P13–P16. **Approved by the user on 2026-10-23 (D19).**
 
 The matrix describes intended policy. It is not evidence that any capability is implemented. Domain services enforce it on every query, mutation, job, asset, citation, retrieval, and cache; UI and route middleware are not the security boundary.
 

@@ -1,6 +1,6 @@
 # AI, sources, and grounded evidence
 
-**Status:** Proposed AI architecture and trust behavior. D06, D07, T19, and T20 were adopted 2026-10-22 to unblock implementation, at the user's direction to proceed on the planned defaults; revisit at architecture review.
+**Status:** Proposed AI architecture and trust behavior. D06, D07, T19, and T20 were adopted 2026-10-22 to unblock implementation, at the user's direction to proceed on the planned defaults; revisit at architecture review. **Approved by the user on 2026-10-23 (D19).**
 
 ## AI responsibilities
 

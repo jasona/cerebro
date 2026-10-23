@@ -1,6 +1,6 @@
 # System architecture
 
-**Status:** Proposed technical architecture. The implementation selections marked below (D08, T07, T16–T22) were adopted 2026-10-22 to unblock implementation, at the user's direction to proceed on the planned defaults; revisit at architecture review.
+**Status:** Proposed technical architecture. The implementation selections marked below (D08, T07, T16–T22) were adopted 2026-10-22 to unblock implementation, at the user's direction to proceed on the planned defaults; revisit at architecture review. **Approved by the user on 2026-10-23 (D19).**
 
 ## Runtime shape
 

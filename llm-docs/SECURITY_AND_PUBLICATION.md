@@ -1,6 +1,6 @@
 # Security, publication, and sharing
 
-**Status:** Policy and implementation boundaries. D04, D05, D07, D08, D09, and D10 were adopted 2026-10-22 to unblock implementation, at the user's direction to proceed on the planned defaults; revisit at architecture review. Other items remain proposals.
+**Status:** Policy and implementation boundaries. D04, D05, D07, D08, D09, and D10 were adopted 2026-10-22 to unblock implementation, at the user's direction to proceed on the planned defaults; revisit at architecture review. Other items remain proposals. **Approved by the user on 2026-10-23 (D19).**
 
 ## Authorization model
 

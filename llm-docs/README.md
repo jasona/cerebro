@@ -1,6 +1,6 @@
 # Cerebro planning documentation
 
-**Status:** Product brief recorded. Defaults D03–D09 and implementation selections T07 and T16–T22 adopted 2026-10-22 to unblock implementation, at the user's direction to proceed on the planned defaults; revisit at architecture review.
+**Status:** Product brief recorded. Defaults D03–D09 and implementation selections T07 and T16–T22 adopted 2026-10-22 to unblock implementation, at the user's direction to proceed on the planned defaults; revisit at architecture review. **Approved by the user on 2026-10-23 (D19).**
 **Created:** 2026-10-22
 
 Cerebro is an AI-native executive communication platform. Its purpose is to turn executive thinking into shared understanding through interactive, evidence-backed briefings.

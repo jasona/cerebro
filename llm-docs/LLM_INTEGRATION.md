@@ -1,6 +1,6 @@
 # Authoring and publishing from an LLM
 
-**Status:** Primary authoring direction accepted by the user on 2026-10-22 (D02). Evidence approval and author-written perspectives in Phase 2, local connection tokens (D08), and the MCP transport (T21) were adopted 2026-10-22 to unblock implementation, at the user's direction to proceed on the planned defaults; revisit at architecture review. Host support and production authorization still require technical review.
+**Status:** Primary authoring direction accepted by the user on 2026-10-22 (D02). Evidence approval and author-written perspectives in Phase 2, local connection tokens (D08), and the MCP transport (T21) were adopted 2026-10-22 to unblock implementation, at the user's direction to proceed on the planned defaults; revisit at architecture review. Host support and production authorization still require technical review. **Approved by the user on 2026-10-23 (D19).**
 
 ## Product goal
 
@@ -142,7 +142,7 @@ The authorization server is Clerk (D13). Cerebro implements the protected-resour
 
 ## Host experience and rollout
 
-ChatGPT is a proposed first integration target, not an approved distribution commitment. Validate account availability, workspace policy, OAuth behavior, write permissions, file transfer, and distribution requirements before promising access.
+Claude is the first supported host and ChatGPT the next (D20). Neither is a distribution commitment yet. Validate account availability, workspace policy, OAuth behavior, write permissions, file transfer, and distribution requirements before promising access.
 
 The adapter uses `@modelcontextprotocol/sdk` over Streamable HTTP, served from a Next.js route at `/api/mcp` (T21).
 

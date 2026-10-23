@@ -1,6 +1,6 @@
 # Risks and decision register
 
-**Status:** Decision and risk register. D01–D02 record accepted product direction. D03–D10 and the implementation selections below were adopted 2026-10-22 to unblock implementation, at the user's direction to proceed on the planned defaults; revisit at architecture review. Remaining proposals are not recorded as approved.
+**Status:** Decision and risk register. D01–D02 record accepted product direction. D03–D10 and the implementation selections below were adopted 2026-10-22 to unblock implementation, at the user's direction to proceed on the planned defaults; revisit at architecture review. Remaining proposals are not recorded as approved. **Approved by the user on 2026-10-23 (D19).**
 
 ## Accepted product direction
 
@@ -17,12 +17,16 @@ On 2026-10-22, the user specified Company → Department → Team and easy disco
 | D16 | 2026-10-23 | **Withdrawing a brief withdraws every revision.** Withdrawing the current publication also withdraws all earlier active publications, each audited and removed from Q&A; pinned links show the withdrawn state. Withdrawing an older, non-current publication affects only that one. Publishing again creates a new publication | User decision; resolves the D10 open item. Implemented in `withdrawPublicationInTx` with tests. Affects ACCESS_MATRIX, SECURITY_AND_PUBLICATION, the history page |
 | D17 | 2026-10-23 | **Reader-privacy cohort minimum: 3 distinct readers.** Confirms D07's provisional setting as the decision | User decision. Affects AI_AND_EVIDENCE, ACCESS_MATRIX |
 | D18 | 2026-10-23 | **Default retention: keep everything.** New companies get no automatic deletion; owners may set per-category periods (sources, conversations, events) through the retention mechanism (T28). Resolves P11's default | User decision. Whether audit, published evidence, feedback and backups are covered by retention remains open |
+| D19 | 2026-10-23 | **Architecture review: adopted decisions approved.** D03–D11 and the implementation selections T07 and T16–T29 are approved as adopted; they no longer await architecture review | User decision. Affects every document that marked them "revisit at architecture review" | **Approved by the user on 2026-10-23 (D19).**
+| D20 | 2026-10-23 | **Product proposals adopted as proposed:** P07–P09 and P12–P19 become decisions with their proposed defaults. P17's first supported LLM host is **Claude**, with ChatGPT next | User decision. Affects LLM_INTEGRATION, GOALS, MVP_PLAN, TEAM_WORKSPACES, ACCESS_MATRIX |
+| D21 | 2026-10-23 | **Limits stay off for the pilot.** Rate limits and AI usage caps (T28) remain unset until real usage data exists; the existing cap of 30 reader questions per briefing per hour stays | User decision. Revisit with pilot usage data |
+| D22 | 2026-10-23 | **Pilot targets after first real usage.** Latency, AI evaluation thresholds and adoption measures (P12) are agreed from baselines collected during the pilot (`npm run perf`, `npm run ai:eval`) | User decision. Pilot exit gates wait for these targets |
 
 D02 records the user's instruction to update the plan after reviewing the proposed integration experience. It does not imply approval of every technical detail, host, identity vendor, or outstanding privacy decision.
 
 ## Defaults adopted to unblock implementation
 
-Each decision below was adopted 2026-10-22 to unblock implementation, at the user's direction to proceed on the planned defaults; revisit at architecture review. The user directed work to proceed on the planned defaults; these entries do not record the user's approval of any specific detail.
+Each decision below was adopted 2026-10-22 to unblock implementation, at the user's direction to proceed on the planned defaults; revisit at architecture review. The user directed work to proceed on the planned defaults; these entries do not record the user's approval of any specific detail. **Approved by the user on 2026-10-23 (D19).**
 
 | ID | Date | Chosen behavior | Rationale | Affected documents |
 | --- | --- | --- | --- | --- |
@@ -46,7 +50,7 @@ Connection tokens are a dev/test stand-in only, not the production delegated-aut
 
 ### D10 security review follow-ups
 
-Adopted 2026-10-22 to unblock implementation; revisit at architecture review.
+Adopted 2026-10-22 to unblock implementation; revisit at architecture review. **Approved by the user on 2026-10-23 (D19).**
 
 | Topic | Chosen behavior |
 | --- | --- |
@@ -62,7 +66,7 @@ The MCP adapter enforces connection revocation by authenticating every request; 
 
 ### D11 production-path security review follow-ups
 
-Adopted 2026-10-23 after a security review of the second-pass production paths (identity, OAuth, MCP, ops endpoints, storage, retention, backups, capture); revisit at architecture review. Each fix has a regression test.
+Adopted 2026-10-23 after a security review of the second-pass production paths (identity, OAuth, MCP, ops endpoints, storage, retention, backups, capture); revisit at architecture review. Each fix has a regression test. **Approved by the user on 2026-10-23 (D19).**
 
 | Topic | Chosen behavior |
 | --- | --- |
@@ -99,11 +103,11 @@ Adopted 2026-10-23 after a security review of the second-pass production paths (
 | P14 | Hierarchy membership | One department per team; users may join multiple teams; department access derives from direct or child-team membership | Determines library aggregation and audience checks; used by the access matrix |
 | P15 | Organizational placement | One company/department/team home per briefing, independent of audience | Moving content must not silently change access |
 | P16 | Structure administration | Company administrators initially manage departments and teams | Delegated team management can follow an explicit capability decision |
-| P17 | First supported LLM host | ChatGPT proposed; validate capabilities, distribution, and workspace availability | Establishes a real end-to-end path without promising universal support |
+| P17 | First supported LLM host | **Decided (D20): Claude first, ChatGPT next.** Originally: ChatGPT proposed; validate capabilities, distribution, and workspace availability | Establishes a real end-to-end path without promising universal support |
 | P18 | Authoring preferences | Remember explicitly chosen company/team and style; reauthorize on use | Reduces repeated input without guessing destinations or broadening audience |
 | P19 | Integrated publication review | One explicit release action after content and audience review, subject to host policy | Requires an exact preview binding and supported review/action flow |
 
-P07–P09 and P11–P19 remain proposed defaults.
+P07–P09 and P12–P19 were adopted as proposed by the user on 2026-10-23 (D20); P17's first host is Claude, with ChatGPT next. P11's default is D18.
 
 ## Technical decisions
 
@@ -127,7 +131,7 @@ P07–P09 and P11–P19 remain proposed defaults.
 
 ### Implementation selections
 
-Each entry below was adopted 2026-10-22 to unblock implementation, at the user's direction to proceed on the planned defaults; revisit at architecture review.
+Each entry below was adopted 2026-10-22 to unblock implementation, at the user's direction to proceed on the planned defaults; revisit at architecture review. **Approved by the user on 2026-10-23 (D19).**
 
 | ID | Adopted selection | Reason |
 | --- | --- | --- |
@@ -142,7 +146,7 @@ Each entry below was adopted 2026-10-22 to unblock implementation, at the user's
 
 #### Second implementation pass — 2026-10-23
 
-Adopted 2026-10-23 while working through `REMAINING_WORK.md`, at the user's direction to finish the remaining work items; revisit at architecture review. None of these selects a hosting vendor, AI provider, storage vendor or OAuth authorization server, and none sets a limit, retention period or target.
+Adopted 2026-10-23 while working through `REMAINING_WORK.md`, at the user's direction to finish the remaining work items; revisit at architecture review. None of these selects a hosting vendor, AI provider, storage vendor or OAuth authorization server, and none sets a limit, retention period or target. **Approved by the user on 2026-10-23 (D19).**
 
 | ID | Adopted selection | Reason |
 | --- | --- | --- |
@@ -183,8 +187,8 @@ Hosting providers, AI models, embedding configuration, extraction libraries, and
 | Host sends incomplete or unsupported evidence | Polished briefs misrepresent discussion or claim support that was never transferred | Selected-content handoff, provenance, candidate approval, visible gaps and zero-evidence state, source validation |
 | Stale preview or guessed audience | Different content or recipients are released from those reviewed | Bind preview to draft/evidence/home/audience; resolve authorized destinations; reject stale release requests |
 | Connected client exposes private feedback | Authors retrieve private reader conversations through their LLM | Purpose-specific feedback endpoint, current authorization, and transcript privacy tests |
-| Admin self-adds to a team (accepted under D09, D10) | An admin gains a team's or department's audience access through a structural change | Audited membership change; break-glass remains deferred; revisit at architecture review |
-| Older revision readable after withdrawal (open, D10) | Content the author meant to retract stays available through a pinned link to an earlier revision | Current behavior recorded for review; revisit at architecture review |
+| Admin self-adds to a team (decided: allowed and audited, D15) | An admin gains a team's or department's audience access through a structural change | Audited membership change; break-glass remains deferred; revisit at architecture review | **Approved by the user on 2026-10-23 (D19).**
+| Older revision readable after withdrawal (resolved by D16) | Content the author meant to retract stays available through a pinned link to an earlier revision | Current behavior recorded for review; revisit at architecture review | **Approved by the user on 2026-10-23 (D19).**
 
 ## Review process
 

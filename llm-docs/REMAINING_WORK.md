@@ -16,27 +16,25 @@ Status key:
 
 ## Next steps
 
-1. **Decision session (W0):** this is now the main blocker.
+1. **Decisions:** settled (D12–D22). What remains is credentials, the Coolify instance and pilot data (W0).
 2. **Credentials and the Coolify instance:** provide an Anthropic API key, Clerk keys and instance settings, and an S3-compatible bucket on Coolify, then follow `deploy/coolify/README.md` and the live checks below.
 3. **Per decision, connect and re-test:** each W2 item lists what to run once its vendor or value is chosen.
 4. **Pilot gates:** run them once the P12 targets exist.
 
 ## W0 Decisions for the user
 
-These need the user, not an agent. Implementation should not guess them.
+Settled on 2026-10-23: the AI provider (D12), MCP OAuth (D13), hosting (D14), admin self-add (D15), withdrawal (D16), the cohort minimum (D17), default retention (D18), the architecture review of the adopted decisions (D19), the open product proposals with Claude as the first host (D20), limits off for the pilot (D21), and pilot targets set after first usage (D22).
+
+What remains needs the user's credentials, infrastructure or later data:
 
 | Item | What is needed | Blocks |
 | --- | --- | --- |
-| Architecture review | Confirm or revise D03–D10 (D15–D17 settled three of its points), T07, T16–T22 and the second-pass selections T23–T29, all adopted without sign-off to unblock implementation | Everything marked "revisit at architecture review" |
-| Open product proposals | Decide P07–P09 and P11–P19, especially P13 (published visibility) and P14 (hierarchy membership), which the access matrix already relies on | Access matrix, library behavior |
-| AI provider | **Decided: Anthropic (D12).** Still open: model choices beyond the `claude-opus-5-5` default, evaluation thresholds, and an embedding source (Anthropic has no embeddings API) | The retrieval default (W3.2) |
-| Hosting and region | **Decided: internally on Coolify (D14).** Still open: the backup schedule and off-site copies | Backup schedule |
-| Object storage | Choose the S3-compatible service to run on Coolify | W2.3 |
-| Identity and MCP OAuth | **Decided: Clerk for both (D08, D13).** Still needed: Clerk keys and instance settings | W2.2 |
-| First LLM host | Confirm the first supported host (P17) | W2.2 and W3.1 verification |
-| Retention policy | **Default decided: keep everything (D18).** Still open: whether audit, published evidence, feedback and backups are covered, and any per-company periods | Turning on the retention sweep for a company |
-| Limits and costs | Set rate limits, AI run and token caps, and the readiness queue-age threshold, or confirm they stay off. Also decide whether the pre-existing cap of 30 reader questions per briefing per hour stays | Turning on W4 limits |
-| Success targets | Agree pilot measures from representative baselines, including latency and AI evaluation thresholds (P12) | Pilot evaluation |
+| Anthropic API key | Provide a key; then run `npm run ai:live` and `npm run ai:eval`, and check answer latency against the 15-second answer timeout | Live verification of D12 |
+| Clerk instance | Provide keys and apply the instance settings in `packages/integrations/README.md` (including `aud_claim_enabled` through Clerk's API) | Live verification of D13, web sign-in |
+| Coolify instance | Deploy with `deploy/coolify/README.md`, choose the S3-compatible storage service, and schedule backups with off-site copies | Live verification of D14 |
+| Embedding source | Anthropic has no embeddings API; choose an embedding source, or keep full-text search | The retrieval default (W3.2) |
+| Retention coverage | Whether audit, published evidence, feedback and backups fall under retention, and any per-company periods (default keep everything, D18) | Turning on the retention sweep for a company |
+| Pilot targets | Agree latency, AI evaluation and adoption targets from pilot baselines (D22) | Pilot exit gates |
 
 ## W1 Housekeeping — Done
 
