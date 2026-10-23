@@ -15,12 +15,14 @@
  */
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import { join } from "node:path";
 
 const root = process.cwd();
 const { getSourceStore } = await import(join(root, "packages/domain/src/sources/store.ts"));
 const { S3SourceStore } = await import(join(root, "packages/domain/src/sources/s3-store.ts"));
-const { HeadObjectCommand } = await import("@aws-sdk/client-s3");
+// Resolve the SDK the way the domain package does (no reliance on hoisting).
+const { HeadObjectCommand } = createRequire(join(root, "packages/domain/package.json"))("@aws-sdk/client-s3");
 
 const [mode, ...rest] = process.argv.slice(2);
 const BYTES = new TextEncoder().encode("Cerebro smoke test source object\n");

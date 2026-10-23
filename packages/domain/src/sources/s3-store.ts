@@ -22,7 +22,9 @@ import { parseSourceKey, sourceKeyFor, verifySourceBytes, type SourceStore } fro
  *   through domain services after an access check.
  * - Immutable: puts send `If-None-Match: *`. A 412 means the object already
  *   exists, and since the key is the content hash that is success. (A service
- *   that ignores the header overwrites with identical bytes.)
+ *   that ignores the header overwrites with identical bytes.) SeaweedFS, the
+ *   in-stack store on Coolify (D25), enforces it: CI's `s3-store` job checks
+ *   that a raw conditional put of an existing key gets 412.
  * - Integrity: `get` verifies the sha256 in the key, so tampering is detected.
  * - Optional server-side encryption (`AES256` or `aws:kms` with a key id).
  */
