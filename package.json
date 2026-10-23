@@ -17,6 +17,7 @@
     "db:seed": "tsx packages/database/src/cli/seed.ts",
     "db:reset": "tsx packages/database/src/cli/reset.ts",
     "typecheck": "node scripts/typecheck.mjs",
+    "ai:eval": "tsx scripts/ai-eval.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test"

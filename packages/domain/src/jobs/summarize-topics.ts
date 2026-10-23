@@ -5,7 +5,7 @@ import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { getBriefingCapabilities } from "../access/index";
 import { recordAudit } from "../audit";
-import { getAiRegistry, resolveOrgAiPolicy } from "../engagement/ai-runtime";
+import { getAiRuntimeOrNull, resolveOrgAiPolicy } from "../engagement/ai-runtime";
 import { ENGAGEMENT_SETTINGS, SUPPRESSED_TOPIC } from "../engagement/settings";
 import { JobError, permanent, requireJobOrg, workerContext } from "./errors";
 
@@ -86,7 +86,9 @@ export async function handleSummarizeTopics(db: Database, job: Job): Promise<voi
 
   let provider;
   try {
-    provider = getAiRegistry().resolve("summarize_topics", prepared.policy);
+    const registry = (await getAiRuntimeOrNull())?.registry;
+    if (!registry) throw new JobError("ai_unavailable", true);
+    provider = registry.resolve("summarize_topics", prepared.policy);
   } catch {
     throw new JobError("ai_unavailable", true);
   }

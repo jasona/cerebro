@@ -15,7 +15,7 @@ import {
   type Perspective,
   type Section,
 } from "@cerebro/briefing-schema/client";
-import type { SourceExtractionDto } from "@cerebro/domain";
+import type { SourceExtractionDto, SuggestionDto } from "@cerebro/domain";
 import { Badge, Button, buttonClasses, cn, focusRing, Input, Select, Textarea } from "@cerebro/ui";
 import { saveDraftAction, type SaveOutcome } from "@/app/c/[company]/b/[briefing]/edit/actions";
 import { BLOCK_TYPE_LABELS, BLOCK_TYPE_ORDER, cleanDocument, newBlock } from "../document-utils";
@@ -24,6 +24,7 @@ import { BlockEditor } from "./block-editors";
 import { AnnounceContext, focusSoon, Group, ItemControls, move } from "./controls";
 import { RichTextField } from "./rich-text-field";
 import { SourcesPanel } from "./sources-panel";
+import { SuggestionsPanel } from "./suggestions-panel";
 
 export interface BriefingEditorProps {
   company: string;
@@ -33,6 +34,8 @@ export interface BriefingEditorProps {
   lockVersion: number;
   issues: DocumentIssue[];
   sources: SourceExtractionDto[];
+  /** Pending AI-assisted proposals (perspectives, revisions). */
+  suggestions?: SuggestionDto[];
   canPublish: boolean;
   /** Composer gaps reported when the draft was created (New brief). */
   gaps?: string[];
@@ -352,6 +355,18 @@ export function BriefingEditor(props: BriefingEditorProps) {
           <SectionsEditor doc={doc} update={update} />
 
           <PerspectivesEditor perspectives={doc.perspectives} sections={sectionOptions} blocks={blockOptions} update={update} />
+
+          <SuggestionsPanel
+            suggestions={props.suggestions ?? []}
+            target={{ company, briefing, briefingId }}
+            version={version}
+            dirty={dirty}
+            sections={sectionOptions}
+            blocks={blockOptions}
+            onApplied={() => {
+              reloadRequested.current = true;
+            }}
+          />
 
           <EvidenceEditor evidence={doc.evidence} update={update} />
 

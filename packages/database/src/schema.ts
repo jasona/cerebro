@@ -1216,6 +1216,57 @@ export const userIdentities = pgTable(
   ],
 );
 
+export const SUGGESTION_KINDS = ["perspective", "revision"] as const;
+export const SUGGESTION_STATUSES = ["pending", "accepted", "dismissed"] as const;
+export type SuggestionKind = (typeof SUGGESTION_KINDS)[number];
+export type SuggestionStatus = (typeof SUGGESTION_STATUSES)[number];
+
+/**
+ * AI-assisted composition proposals (migration 0007): suggested perspectives
+ * and revision proposals for a draft. Proposals only; acceptance writes the
+ * draft through the normal lock_version check. A decided row is final.
+ */
+export const briefingSuggestions = pgTable(
+  "briefing_suggestions",
+  {
+    id: pk(),
+    organizationId: orgId(),
+    briefingId: uuid("briefing_id").notNull(),
+    kind: text("kind").$type<SuggestionKind>().notNull(),
+    status: text("status").$type<SuggestionStatus>().notNull().default("pending"),
+    baseVersion: integer("base_version").notNull(),
+    payload: jsonb("payload").notNull(),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    aiRunId: uuid("ai_run_id"),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+    decidedBy: userRef("decided_by"),
+    decidedAt: ts("decided_at"),
+    appliedVersion: integer("applied_version"),
+  },
+  (t) => [
+    unique("briefing_suggestions_org_id_key").on(t.organizationId, t.id),
+    index("briefing_suggestions_briefing_idx").on(t.organizationId, t.briefingId, t.status),
+    check("briefing_suggestions_kind_check", oneOf(t.kind, SUGGESTION_KINDS)),
+    check("briefing_suggestions_status_check", oneOf(t.status, SUGGESTION_STATUSES)),
+    check("briefing_suggestions_base_version_check", sql`${t.baseVersion} >= 1`),
+    check("briefing_suggestions_decision_check", sql`(${t.status} = 'pending') = (${t.decidedAt} is null)`),
+    foreignKey({
+      name: "briefing_suggestions_briefing_fk",
+      columns: [t.organizationId, t.briefingId],
+      foreignColumns: [briefings.organizationId, briefings.id],
+    }),
+    foreignKey({
+      name: "briefing_suggestions_ai_run_fk",
+      columns: [t.organizationId, t.aiRunId],
+      foreignColumns: [aiRuns.organizationId, aiRuns.id],
+    }),
+  ],
+);
+
 /** Tables carrying `organization_id` that are subject to tenant RLS. */
 export const TENANT_TABLES = [
   "memberships",
@@ -1249,4 +1300,5 @@ export const TENANT_TABLES = [
   "jobs",
   "retrieval_chunks",
   "briefing_reads",
+  "briefing_suggestions",
 ] as const;

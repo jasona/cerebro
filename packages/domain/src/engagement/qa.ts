@@ -1,11 +1,4 @@
-import {
-  AnswerTask,
-  RetrievedPassage,
-  runAnswer,
-  type AiRunRecord,
-  type AnswerOutput,
-  type AnswerPart,
-} from "@cerebro/ai";
+import { AnswerTask, runAnswer, type AiErrorCategory, type AiRunRecord, type AnswerOutput, type AnswerPart } from "@cerebro/ai";
 import { BlockId, PerspectiveId, PublishedBriefingDocument } from "@cerebro/briefing-schema";
 import {
   answerCitations,
@@ -24,7 +17,8 @@ import { RequestContext } from "../context";
 import { DomainError } from "../errors";
 import { isRevisionIndexed } from "../jobs/kinds";
 import { insertAiRun } from "../jobs/summarize-topics";
-import { getAiRegistry, resolveOrgAiPolicy } from "./ai-runtime";
+import { allowedEmbeddings, getAiRuntimeOrNull, resolveOrgAiPolicy, type AiRuntime } from "./ai-runtime";
+import { embedQuestion, retrieveRevisionChunks, type QueryEmbedding, type RetrievedChunk } from "./retrieval";
 import { documentTargets, resolveReadableRevision, type DocumentTargets } from "./revision";
 import { ENGAGEMENT_SETTINGS } from "./settings";
 
@@ -82,93 +76,25 @@ const UNAVAILABLE =
   "Answers are unavailable right now. The briefing and its approved evidence remain available to read, and you can submit your question to the author.";
 
 // ---------------------------------------------------------------------------
-// Retrieval
-// ---------------------------------------------------------------------------
-
-interface RetrievedChunk {
-  passage: RetrievedPassage;
-  /** revision_evidence.id for evidence passages. */
-  evidenceRowId: string | null;
-  excerpt: string | null;
-}
-
-/** Safe OR-query of the question's words: only [a-z0-9] tokens reach to_tsquery. */
-export function tsQueryFor(question: string): string | null {
-  const words = [...new Set(question.toLowerCase().match(/[a-z0-9]+/g) ?? [])].filter((w) => w.length >= 2).slice(0, 32);
-  return words.length ? words.join(" | ") : null;
-}
-
-/**
- * Full-text retrieval (T20) from `retrieval_chunks` for exactly this
- * organization + revision: FTS-ranked chunks first, then the rest of the same
- * revision by document order up to top-k, so the answerer's relevance
- * statistics see a representative corpus. Nothing outside the revision's
- * published blocks and approved evidence is ever reachable from here.
- */
-async function retrievePassages(
-  tx: Executor,
-  organizationId: string,
-  revisionId: string,
-  question: string,
-  targets: DocumentTargets,
-): Promise<RetrievedChunk[]> {
-  const q = tsQueryFor(question);
-  const rank = q ? sql`ts_rank_cd(c.tsv, to_tsquery('english', ${q}))` : sql`0`;
-  const res = await tx.execute<{
-    kind: "block" | "evidence";
-    block_key: string | null;
-    evidence_row_id: string | null;
-    evidence_key: string | null;
-    evidence_title: string | null;
-    evidence_excerpt: string | null;
-    text: string;
-  }>(sql`
-    select c.kind, c.block_key, c.evidence_id as evidence_row_id, c.text,
-           e.evidence_key, e.title as evidence_title, e.excerpt as evidence_excerpt
-    from retrieval_chunks c
-    left join revision_evidence e
-      on e.organization_id = c.organization_id and e.revision_id = c.revision_id and e.id = c.evidence_id
-    where c.organization_id = ${organizationId}::uuid and c.revision_id = ${revisionId}::uuid
-    order by ${rank} desc, c.ordinal
-    limit ${ENGAGEMENT_SETTINGS.retrievalTopK}`);
-
-  const out: RetrievedChunk[] = [];
-  for (const r of res.rows) {
-    if (r.kind === "evidence") {
-      if (!r.evidence_key || !r.evidence_row_id) continue;
-      const p = RetrievedPassage.safeParse({
-        id: r.evidence_key,
-        kind: "evidence",
-        evidenceId: r.evidence_key,
-        revisionId,
-        text: r.text,
-        title: r.evidence_title ?? "Evidence",
-      });
-      if (p.success) out.push({ passage: p.data, evidenceRowId: r.evidence_row_id, excerpt: r.evidence_excerpt });
-    } else if (r.block_key) {
-      const blockId = BlockId.safeParse(r.block_key).success ? r.block_key : undefined;
-      const p = RetrievedPassage.safeParse({
-        id: r.block_key,
-        kind: "block",
-        ...(blockId ? { blockId } : {}),
-        revisionId,
-        text: r.text,
-        title: targets.passages.get(r.block_key)?.title ?? "Briefing",
-      });
-      if (p.success) out.push({ passage: p.data, evidenceRowId: null, excerpt: null });
-    }
-  }
-  return out;
-}
-
-// ---------------------------------------------------------------------------
 // askQuestion
 // ---------------------------------------------------------------------------
 
+export { tsQueryFor } from "./retrieval";
+
 export interface AskQuestionDeps {
-  /** Override the AI registry (tests). Defaults to getAiRegistry(). */
-  registry?: ReturnType<typeof getAiRegistry>;
+  /** Override the AI registry (tests). Defaults to the process AI runtime. */
+  registry?: AiRuntime["registry"];
+  /** Override the answer timeout (tests). Defaults to ENGAGEMENT_SETTINGS.answerTimeoutMs. */
+  timeoutMs?: number;
 }
+
+/**
+ * Failures after which the next approved provider is tried. The registry's
+ * candidates are already limited to providers the organization allows, so a
+ * fallback never sends data anywhere new; with the default routing the last
+ * candidate is the local deterministic provider (principle 6).
+ */
+const FALLBACK_ON: ReadonlySet<AiErrorCategory> = new Set(["unavailable", "timeout", "provider_error", "invalid_output", "unsupported"]);
 
 /**
  * Ask a grounded question about one exact revision.
@@ -191,6 +117,16 @@ export async function askQuestion(
   const parsed = AskQuestionInput.safeParse(raw);
   if (!parsed.success) throw new DomainError("validation", "Invalid question.", { issues: parsed.error.issues.map((i) => i.message) });
   const input = parsed.data;
+
+  // Hybrid retrieval embeds the question first, outside any transaction, and
+  // only with an embedding provider the organization allows. Any failure
+  // leaves retrieval on full-text.
+  const runtime = await getAiRuntimeOrNull();
+  let queryEmbedding: QueryEmbedding | null = null;
+  if (runtime?.retrievalMode === "hybrid" && runtime.embeddings) {
+    const policy = await withAuthContext(db, authOf(c), (tx) => resolveOrgAiPolicy(tx, c.organizationId));
+    queryEmbedding = await embedQuestion(allowedEmbeddings(runtime, policy), input.question);
+  }
 
   const prep = await withAuthContext(db, authOf(c), async (tx) => {
     const rev = await resolveReadableRevision(tx, c, input.briefingId, input.revisionNumber);
@@ -247,7 +183,11 @@ export async function askQuestion(
       thread = { id: t!.id, perspectiveKey: perspectiveId ?? null };
     }
 
-    const chunks = await retrievePassages(tx, c.organizationId, rev.revisionId, input.question, targets);
+    const chunks = await retrieveRevisionChunks(tx, c.organizationId, rev.revisionId, input.question, {
+      mode: runtime?.retrievalMode ?? "fts",
+      queryEmbedding,
+      titleOf: (key) => targets.passages.get(key)?.title,
+    });
     await tx.insert(qaMessages).values({
       organizationId: c.organizationId,
       threadId: thread.id,
@@ -280,12 +220,31 @@ export async function askQuestion(
   }
 
   // The model call happens outside any transaction (PGlite serializes them).
-  const registry = deps.registry ?? getAiRegistry();
+  const registry = deps.registry ?? runtime?.registry;
   let output: AnswerOutput | null = null;
-  let record: AiRunRecord;
-  const candidates = registry.candidates("answer", prep.policy);
-  if (candidates.length === 0) {
-    record = {
+  const records: AiRunRecord[] = [];
+  const candidates = registry ? registry.candidates("answer", prep.policy) : [];
+  for (const provider of candidates) {
+    const res = await runAnswer(
+      provider,
+      {
+        question: input.question,
+        revisionId: prep.revisionId,
+        ...(input.focusBlockId ? { focusBlockId: input.focusBlockId } : {}),
+        ...(prep.perspective ? { perspective: prep.perspective } : {}),
+        passages: prep.chunks.map((ch) => ch.passage),
+      },
+      { timeoutMs: deps.timeoutMs ?? ENGAGEMENT_SETTINGS.answerTimeoutMs },
+    );
+    records.push(res.record);
+    if (res.ok) {
+      output = res.output;
+      break;
+    }
+    if (!FALLBACK_ON.has(res.error.category)) break;
+  }
+  if (records.length === 0) {
+    records.push({
       task: "answer",
       provider: "none",
       model: "none",
@@ -295,21 +254,7 @@ export async function askQuestion(
       usage: {},
       errorCategory: "unavailable",
       revisionId: prep.revisionId,
-    };
-  } else {
-    const res = await runAnswer(
-      candidates[0]!,
-      {
-        question: input.question,
-        revisionId: prep.revisionId,
-        ...(input.focusBlockId ? { focusBlockId: input.focusBlockId } : {}),
-        ...(prep.perspective ? { perspective: prep.perspective } : {}),
-        passages: prep.chunks.map((ch) => ch.passage),
-      },
-      { timeoutMs: ENGAGEMENT_SETTINGS.answerTimeoutMs },
-    );
-    record = res.record;
-    if (res.ok) output = res.output;
+    });
   }
 
   // Bind citations to passages retrieved for this revision only.
@@ -341,7 +286,8 @@ export async function askQuestion(
         ),
       );
     if (!t) throw new DomainError("not_found", "Conversation not found.");
-    const aiRunId = await insertAiRun(tx, c.organizationId, c.userId, record);
+    let aiRunId: string | null = null;
+    for (const record of records) aiRunId = await insertAiRun(tx, c.organizationId, c.userId, record);
     const [msg] = await tx
       .insert(qaMessages)
       .values({

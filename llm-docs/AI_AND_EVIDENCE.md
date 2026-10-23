@@ -10,6 +10,8 @@ Use task-oriented interfaces such as composition, revision proposal, answer gene
 
 Per T19, the default provider is deterministic and local: answers are extractive and retrieval-based, and composition preserves the supplied structure. It needs no external model, so reading, publishing, and tests never depend on a live model. An AI SDK adapter accepts an injected model; no AI vendor is selected.
 
+Provider wiring is environment configuration (`CEREBRO_AI_PROVIDER`, `CEREBRO_AI_SDK_MODULE`, `CEREBRO_AI_SDK_EXPORT`, `CEREBRO_AI_MODEL`, plus embedding and retrieval settings), documented in `packages/ai/README.md`. The default remains deterministic. With `ai-sdk`, the named AI SDK provider module is imported at start-up and a missing or invalid module stops start-up with a clear error. Connecting an approved provider is configuration plus installing that one package; an organization must also list the provider id in its AI policy before its data is sent there.
+
 ## Incoming LLM authoring
 
 The primary creation workflow receives selected content from an executive's connected LLM through the authenticated integration described in [LLM_INTEGRATION.md](LLM_INTEGRATION.md). This incoming host connection is independent of Cerebro's outgoing model-provider calls.
@@ -44,6 +46,8 @@ The author inspects and applies the proposal. Applying an AI edit uses the same 
 
 Author-written perspectives, supplied in the handoff or edited manually, are part of Phase 2. AI-suggested perspectives follow in Phase 3; they are proposals that the author reviews and adopts before they are stored with the document. Either kind changes emphasis and implications only, never access (D06). The reader does not receive dynamically invented author positions on each visit.
 
+Implementation (W3.3): suggested perspectives (`suggest_perspectives` task) and revision proposals (`propose_revision` task) are stored as pending rows in `briefing_suggestions` (migration 0007), never in the draft. Before a perspective suggestion is stored, and again when it is accepted, it is checked against the draft: emphasis may name only existing sections, implication links only existing blocks, text may not name unknown section, block or evidence ids, and every number must already appear in the draft's stated content (approved evidence only). The author accepts or dismisses each suggestion in the editor. Accepting writes the draft through the same `expectedVersion` check as a manual save; a revision proposal is accepted only against the draft version it was generated for. Publication still requires the normal preview and publish actions. The deterministic provider makes rule-based suggestions that quote the draft and say that no model was used.
+
 ## Reader Q&A pipeline
 
 ```mermaid
@@ -58,6 +62,8 @@ flowchart LR
 Every retrieval operation is scoped to the authorized organization, briefing, revision, and evidence set before content is supplied to the model. Private source chunks are an authoring resource and are not part of the reader corpus.
 
 Start with full-text retrieval (T20). Add vector retrieval only when an embedding provider is configured, and measure the combination before relying on it. Optimize ranking and indexing from representative evaluations, without weakening authorization predicates. Derived indexes must be invalidated or made unavailable when access or publication state changes.
+
+Implementation (W3.2): an embedding task interface with a deterministic local implementation (hashed bag-of-words, 256 dimensions) for tests and development. When embeddings are configured and the organization allows the embedding provider, an `embed_revision` job fills the vector columns of a published revision's retrieval chunks (published blocks and approved evidence only; private source chunks are never embedded for readers) and records the model and dimensions. Hybrid retrieval, reciprocal rank fusion of the full-text and vector rankings within the revision, is behind `CEREBRO_RETRIEVAL_MODE=hybrid` and defaults off. It compares only vectors from the same model and dimensions, and falls back to full-text when the question cannot be embedded. `npm run ai:eval` reports full-text and hybrid metrics side by side; it does not choose the default.
 
 ## Answer behavior
 
@@ -81,6 +87,8 @@ Provider routing and fallback must obey organization policy, including permitted
 
 Apply task-specific timeouts, bounded context, rate limits, usage budgets, and retries. Changes to an embedding model require explicit projection versioning and reindexing because vector spaces are not interchangeable.
 
+Implemented fallback: providers are tried in configured order among those the organization's policy allows. A provider that is unavailable, times out, errors or returns invalid output hands over to the next allowed provider, which by default is the local deterministic provider. When none succeeds, reader Q&A stores an honest "answers are unavailable" result, and proposals report that they are unavailable without changing the draft. Every attempt is recorded in `ai_runs` with its error category.
+
 ## Reader privacy and topic analysis
 
 Per D07, Q&A is private to the asker, with disclosed aggregate topic analysis. Authors receive explicitly submitted attributed feedback separately.
@@ -100,3 +108,5 @@ Use representative executive briefings and intentionally difficult questions to 
 - Unsupported numerical precision and invented implications.
 
 Quality targets are set before pilot launch. Provider changes require rerunning the relevant evaluations.
+
+`npm run ai:eval` runs the answer set against every configured provider and the retrieval set (full-text against hybrid) on the fictional strategy briefing. It prints metrics only and writes JSON and Markdown reports to `.data/ai-eval/` (git-ignored). It applies no pass threshold; thresholds remain to be agreed.

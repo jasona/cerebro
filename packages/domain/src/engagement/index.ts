@@ -40,5 +40,18 @@ export {
   type CohortCount,
 } from "./events";
 export { ENGAGEMENT_SETTINGS, ENGAGEMENT_DISCLOSURE, ENGAGEMENT_LABELS, SUPPRESSED_TOPIC } from "./settings";
-export { getAiRegistry, setAiRegistry, resolveOrgAiPolicy, DEFAULT_ALLOWED_PROVIDERS } from "./ai-runtime";
+export {
+  getAiRegistry,
+  setAiRegistry,
+  setAiRuntime,
+  loadAiRuntime,
+  getAiRuntime,
+  getAiRuntimeOrNull,
+  allowedEmbeddings,
+  resolveOrgAiPolicy,
+  DEFAULT_ALLOWED_PROVIDERS,
+  AI_SETTINGS,
+  type AiRuntime,
+} from "./ai-runtime";
+export { retrieveRevisionChunks, embedQuestion, vectorLiteral, type RetrievedChunk, type QueryEmbedding, type RetrieveOptions } from "./retrieval";
 export type { TopicInsightDto, InsightsView } from "./revision";

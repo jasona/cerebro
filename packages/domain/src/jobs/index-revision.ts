@@ -14,9 +14,39 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { canReadRevision } from "../access/index";
 import { recordAudit } from "../audit";
+import { allowedEmbeddings, getAiRuntimeOrNull, resolveOrgAiPolicy } from "../engagement/ai-runtime";
 import { permanent, requireJobOrg, workerContext } from "./errors";
+import { enqueueEmbedRevision } from "./kinds";
 
-const Payload = z.object({ revisionId: z.string().uuid(), briefingId: z.string().uuid() });
+export const RevisionJobPayload = z.object({ revisionId: z.string().uuid(), briefingId: z.string().uuid() });
+const Payload = RevisionJobPayload;
+
+/**
+ * Users a revision job may act as: who published, then who created the
+ * revision. System context (justified): the worker serves every organization
+ * and must find a user to act as before it can open an auth context. Reads
+ * two ids only.
+ */
+export async function revisionJobActors(db: Database, organizationId: string, briefingId: string, revisionId: string): Promise<string[]> {
+  return withSystemContext(db, async (tx) => {
+    const rows = await tx
+      .select({ createdBy: briefingRevisions.createdBy, publishedBy: publications.publishedBy })
+      .from(briefingRevisions)
+      .leftJoin(
+        publications,
+        and(eq(publications.organizationId, briefingRevisions.organizationId), eq(publications.revisionId, briefingRevisions.id)),
+      )
+      .where(
+        and(
+          eq(briefingRevisions.organizationId, organizationId),
+          eq(briefingRevisions.id, revisionId),
+          eq(briefingRevisions.briefingId, briefingId),
+        ),
+      );
+    const row = rows[0];
+    return row ? [...new Set([row.publishedBy, row.createdBy].filter((x): x is string => !!x))] : [];
+  });
+}
 
 /**
  * Build the reader retrieval projection for one published revision.
@@ -36,26 +66,7 @@ export async function handleIndexRevision(db: Database, job: Job): Promise<void>
   if (!parsed.success) throw permanent("invalid_payload");
   const { revisionId, briefingId } = parsed.data;
 
-  // System context (justified): the worker serves every organization and must
-  // find a user to act as before it can open an auth context. Reads two ids only.
-  const actors = await withSystemContext(db, async (tx) => {
-    const rows = await tx
-      .select({ createdBy: briefingRevisions.createdBy, publishedBy: publications.publishedBy })
-      .from(briefingRevisions)
-      .leftJoin(
-        publications,
-        and(eq(publications.organizationId, briefingRevisions.organizationId), eq(publications.revisionId, briefingRevisions.id)),
-      )
-      .where(
-        and(
-          eq(briefingRevisions.organizationId, organizationId),
-          eq(briefingRevisions.id, revisionId),
-          eq(briefingRevisions.briefingId, briefingId),
-        ),
-      );
-    const row = rows[0];
-    return row ? [...new Set([row.publishedBy, row.createdBy].filter((x): x is string => !!x))] : [];
-  });
+  const actors = await revisionJobActors(db, organizationId, briefingId, revisionId);
   if (actors.length === 0) throw permanent("revision_not_found");
 
   for (const userId of actors) {
@@ -128,6 +139,18 @@ export async function handleIndexRevision(db: Database, job: Job): Promise<void>
         revisionId,
         metadata: { blockChunks: blockPassages.length, evidenceChunks: evidence.length },
       });
+      // Optional vector projection (W3.2): only when an embedding provider is
+      // configured and this organization allows it. Same transaction, so the
+      // embedding job sees exactly these chunks.
+      const embeddings = rows.length ? allowedEmbeddings(await getAiRuntimeOrNull(), await resolveOrgAiPolicy(tx, organizationId)) : null;
+      if (embeddings) {
+        await enqueueEmbedRevision(tx, {
+          organizationId,
+          briefingId,
+          revisionId,
+          embeddingModel: `${embeddings.model}:${embeddings.dimensions}`,
+        });
+      }
       return true;
     });
     if (done) return;
