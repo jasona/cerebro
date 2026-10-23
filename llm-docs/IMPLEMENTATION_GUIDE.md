@@ -44,8 +44,14 @@ Dependencies are pre-installed at the root. **Do not run `npm install`** — if 
 | `READY_MAX_QUEUED_AGE_SECONDS` | Optional readiness failure threshold for job queue age; off when unset |
 | `LOG_LEVEL` | Structured log level (`debug`, `info`, `warn`, `error`, `silent`); default `info` |
 | `PG_BIN_DIR`, `CEREBRO_BACKUP_DIR` | `pg_dump`/`pg_restore` location for `db:backup`/`db:restore` (else PATH); backup root (default `.data/backups`) |
+| `DATABASE_ADMIN_URL` | Superuser URL for `db:provision` only: creates/updates the owner role in `DATABASE_URL` (LOGIN CREATEROLE BYPASSRLS), its database and the `vector` extension. Never set on web or worker |
+| `ENGAGEMENT_PSEUDONYM_SECRET` | Key for engagement pseudonyms; falls back to `SESSION_SECRET` |
 
 Operational modules live in `packages/domain/src/ops/` (structured logger with a redaction allowlist, limit configuration, Postgres-backed rate limiter, AI usage recording and limits, readiness, retention and source hard delete). Migrations `0008` (rate-limit counters, AI usage index) and `0009` (retention policies, source deletion with provenance severed from published evidence) add their own RLS. Invalid limit values leave the limit off and make `/api/ready` report `config` as failing.
+
+### Server deployment (D14, Coolify)
+
+`deploy/docker/web.Dockerfile` builds the Next.js standalone output (`output: "standalone"`, tracing root = repository root) and copies whole the packages that output tracing cannot follow (tesseract.js and its WASM core, the English OCR data, `@napi-rs/canvas`, `unpdf`, installed `@ai-sdk/*` providers; `deploy/docker/copy-runtime-packages.mjs`). `deploy/docker/worker.Dockerfile` installs the worker workspace's production dependencies and runs the TypeScript sources with tsx; it also serves the one-shot `migrate` step (`deploy/docker/migrate.sh`: `db:provision` when `DATABASE_ADMIN_URL` is set, then `db:migrate`) and the CLIs (`db:backup`, `retention:sweep`, `org:bootstrap`). `deploy/coolify/docker-compose.yml` runs `postgres` → `migrate` → `web` + `worker`; the runbook is `deploy/coolify/README.md`. `/api/health` and `/api/ready` bypass Clerk in `proxy.ts`. `npm run org:bootstrap` creates a new company and its first owner by email (`packages/domain/src/org/bootstrap.ts`), whom the first verified Clerk sign-in claims.
 
 ## Data access contract
 

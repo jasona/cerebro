@@ -39,7 +39,7 @@ npm run dev            # web
 npm run worker         # background jobs (required with DATABASE_URL)
 ```
 
-The `DATABASE_URL` user is the owner/migration role. The compose user is a superuser. A non-superuser owner needs `BYPASSRLS` (tables force row-level security and no policy targets the owner) and `CREATEROLE` (migrations create `cerebro_app` and grant it to the owner), and a superuser must first run `create extension vector` in the database, since pgvector is not a trusted extension. `db:reset` drops schema `public`, and the extension with it, so it needs a superuser; use `db:migrate` and `db:seed` otherwise.
+The `DATABASE_URL` user is the owner/migration role. The compose user is a superuser. A non-superuser owner needs `BYPASSRLS` (tables force row-level security and no policy targets the owner) and `CREATEROLE` (migrations create `cerebro_app` and grant it to the owner), and a superuser must first run `create extension vector` in the database, since pgvector is not a trusted extension. `npm run db:provision` does this setup with `DATABASE_ADMIN_URL` (a superuser URL on the same server): it creates or updates the owner role named in `DATABASE_URL`, creates its database and the extension, and is idempotent. `db:reset` drops schema `public`, and the extension with it, so it needs a superuser; use `db:migrate` and `db:seed` otherwise.
 
 ### Source object storage (optional)
 
@@ -71,11 +71,21 @@ TEST_S3_ENDPOINT=http://127.0.0.1:9100 TEST_S3_ACCESS_KEY_ID=… TEST_S3_SECRET_
 
 Every setting is documented in `.env.example` and `llm-docs/IMPLEMENTATION_GUIDE.md`. Nothing below has a vendor default.
 
-- **Web sign-in:** `AUTH_MODE=clerk` with `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`. First sign-in needs a pending invitation for the verified email. `AUTH_MODE=dev` is refused when `NODE_ENV=production`.
+- **Web sign-in:** `AUTH_MODE=clerk` with `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`. First sign-in needs a pending invitation for the verified email, or a user created by `npm run org:bootstrap -- --slug <slug> --name "<company>" --owner-email <email>` (a new company's first owner; idempotent, never changes an existing company). `AUTH_MODE=dev` is refused when `NODE_ENV=production`.
 - **MCP OAuth:** set `CEREBRO_OAUTH_ISSUER` to the chosen authorization server's issuer, and `APP_URL` to the public HTTPS URL, which defines the token audience. Metadata is served at `/.well-known/oauth-protected-resource`. See `packages/integrations/README.md`.
 - **AI provider:** `CEREBRO_AI_PROVIDER=ai-sdk`, `CEREBRO_AI_SDK_MODULE` (an installed AI SDK provider package) and `CEREBRO_AI_MODEL`. Each organization must allow the provider in its settings before its data is sent there. `npm run ai:eval` writes answer and retrieval metrics to `.data/ai-eval/`. See `packages/ai/README.md`.
 - **Embeddings and retrieval:** `CEREBRO_EMBEDDINGS` (`none`, `local` or `ai-sdk`) and `CEREBRO_RETRIEVAL_MODE` (`fts`, the default, or `hybrid`).
 - **Object storage:** see "Source object storage" above.
+
+## Deployment (Coolify)
+
+Cerebro is hosted internally on Coolify (D14). [`deploy/coolify/README.md`](deploy/coolify/README.md) is the runbook: project setup, the Postgres/pgvector service, object storage, environment variables, first owner, health checks, backups, upgrades and rollback.
+
+- `deploy/docker/web.Dockerfile`: the Next.js standalone server (`output: "standalone"`), non-root, health check on `/api/health`.
+- `deploy/docker/worker.Dockerfile`: the worker (TypeScript run with tsx) with the PostgreSQL 17 client, also used for migrations, backups and other CLIs.
+- `deploy/coolify/docker-compose.yml`: `postgres` (pgvector) → one-shot `migrate` (`db:provision` + `db:migrate`) → `web` and `worker`.
+
+CI's `images` job builds both images and smoke-tests that stack.
 
 ## Operations
 
@@ -88,7 +98,7 @@ npm run db:backup                         # → .data/backups/<timestamp> (or --
 npm run db:restore -- <backup dir> --yes  # restore database + object store
 ```
 
-A backup directory holds `manifest.json` (time, database kind, applied migrations, object count; no content), the database (`database.pglite.tar.gz` from PGlite's `dumpDataDir`, or `database.pgdump` from `pg_dump --format=custom`) and a copy of the private object store (`.data/objects` or `CEREBRO_OBJECTS_DIR`). Under PGlite, stop `npm run dev` first. A PGlite restore moves the current data and object directories aside to `<dir>.pre-restore-<timestamp>` rather than deleting them; a Postgres restore runs `pg_restore --clean --if-exists` into `DATABASE_URL`. Postgres tools come from `PG_BIN_DIR` if set, else `PATH`. Scheduling, encryption and off-site copies depend on the undecided hosting choice (T10) and are not automated here. Tests: `packages/database/test/backup.test.ts` (PGlite) and `packages/domain/test/postgres.test.ts` (Postgres, runs when the binaries are available).
+A backup directory holds `manifest.json` (time, database kind, applied migrations, object count; no content), the database (`database.pglite.tar.gz` from PGlite's `dumpDataDir`, or `database.pgdump` from `pg_dump --format=custom`) and a copy of the private object store (`.data/objects` or `CEREBRO_OBJECTS_DIR`). Under PGlite, stop `npm run dev` first. A PGlite restore moves the current data and object directories aside to `<dir>.pre-restore-<timestamp>` rather than deleting them; a Postgres restore runs `pg_restore --clean --if-exists` into `DATABASE_URL`, leaving an existing `vector` extension in place so the non-superuser owner can restore. Postgres tools come from `PG_BIN_DIR` if set, else `PATH`. On Coolify, backups run as a scheduled task in the worker container ([`deploy/coolify/README.md`](deploy/coolify/README.md#backups)); off-site copies, encryption and backup retention are not automated, and with the S3 store the bucket is not part of `db:backup` (D11 open item). Tests: `packages/database/test/backup.test.ts` (PGlite) and `packages/domain/test/postgres.test.ts` (Postgres, runs when the binaries are available).
 
 ### Retention and deletion
 
@@ -134,7 +144,7 @@ Vitest uses in-memory PGlite by default. To run the same suites against a Postgr
 TEST_DATABASE_URL=postgres://postgres:postgres@localhost:5432/postgres npx vitest run
 ```
 
-Playwright uses `PLAYWRIGHT_CHROMIUM_PATH`, else `/usr/bin/chromium`, else its own Chromium (`npx playwright install chromium`). `E2E_PORT` changes the port (default 3400). With `E2E_EXTERNAL_SERVER=1` it uses a server you started yourself, such as `next dev` and `npm run worker` against `DATABASE_URL`. CI (`.github/workflows/ci.yml`) runs typecheck, Vitest in both modes, the database CLI against PostgreSQL, and Playwright on PGlite and on PostgreSQL with a separate worker.
+Playwright uses `PLAYWRIGHT_CHROMIUM_PATH`, else `/usr/bin/chromium`, else its own Chromium (`npx playwright install chromium`). `E2E_PORT` changes the port (default 3400). With `E2E_EXTERNAL_SERVER=1` it uses a server you started yourself, such as `next dev` and `npm run worker` against `DATABASE_URL`. CI (`.github/workflows/ci.yml`) runs typecheck, Vitest in both modes, the database CLI against PostgreSQL, Playwright on PGlite and on PostgreSQL with a separate worker, and builds and smoke-tests the production images with the Coolify compose stack.
 
 ## Layout
 
@@ -149,4 +159,6 @@ packages/ui            Design tokens and primitives
 packages/ai            Task interfaces, deterministic provider, answer validation, evaluation set
 packages/capture       Text/Markdown/PDF/DOCX/PPTX extraction with locators; local OCR for scans and images
 packages/integrations  MCP server for LLM-native authoring
+deploy/docker          Production images (web, worker) and the migration step
+deploy/coolify         Coolify compose stack, runbook and CI smoke test
 ```

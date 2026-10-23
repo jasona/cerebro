@@ -34,13 +34,14 @@ describe.skipIf(!adminUrl)("provisionDatabase (PostgreSQL server)", () => {
   const role = `cerebro_prov_owner_${suffix}`;
   const database = `cerebro_prov_${suffix}`;
   const password = randomBytes(12).toString("hex");
-  const ownerUrl = (() => {
-    const u = new URL(adminUrl!);
+  // Built lazily: the describe body is collected even when skipped.
+  const ownerUrlFor = (admin: string) => {
+    const u = new URL(admin);
     u.username = role;
     u.password = password;
     u.pathname = `/${database}`;
     return u.toString();
-  })();
+  };
 
   afterAll(async () => {
     const c = new pg.Client({ connectionString: adminUrl });
@@ -54,6 +55,7 @@ describe.skipIf(!adminUrl)("provisionDatabase (PostgreSQL server)", () => {
   });
 
   it("prepares a non-superuser owner that can migrate and run under RLS, idempotently", async () => {
+    const ownerUrl = ownerUrlFor(adminUrl!);
     const first = await provisionDatabase({ adminUrl: adminUrl!, databaseUrl: ownerUrl });
     expect(first).toEqual({ role, database, roleAction: "created", databaseAction: "created", extension: "created" });
     const again = await provisionDatabase({ adminUrl: adminUrl!, databaseUrl: ownerUrl });

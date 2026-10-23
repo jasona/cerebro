@@ -8,3 +8,4 @@ playwright-report/
 .env
 .env.local
 .claude/worktrees/
+deploy/coolify/docker-compose.ci.yml

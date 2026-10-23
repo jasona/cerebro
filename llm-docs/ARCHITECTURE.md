@@ -112,6 +112,8 @@ Keep package boundaries useful and small. A package split must not create circul
 
 The initial deployment consists of the web service, worker, database, and private object storage. Use separate production and non-production environments, managed secrets, migrations, health checks, and tested backups.
 
+Hosting is internal on Coolify (D14). The deployable shape is a Docker Compose stack, `deploy/coolify/docker-compose.yml`: PostgreSQL with pgvector, a one-shot migration step that must succeed before the web and worker containers start, the web image (Next.js standalone) and the worker image. Object storage is an S3-compatible service run separately; no storage product is chosen. The runbook is `deploy/coolify/README.md`.
+
 AI jobs need bounded retries, timeouts, cancellation or supersession behavior, and usage limits. A retried job must not create duplicate revisions, feedback, or publication effects.
 
 Reader rendering must not depend on a live model request. Published content is served from stored snapshots; Q&A is an optional contextual interaction.

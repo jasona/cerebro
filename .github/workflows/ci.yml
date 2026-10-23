@@ -148,3 +148,59 @@ jobs:
             web.log
             worker.log
           if-no-files-found: ignore
+
+  # Production images (deploy/docker) and the Coolify compose stack
+  # (deploy/coolify/docker-compose.yml): build both images, start postgres ->
+  # migrate (db:provision + db:migrate) -> web and worker with production
+  # settings (NODE_ENV=production, AUTH_MODE=clerk) and dummy credentials
+  # (deploy/coolify/smoke-test.env), then check liveness, readiness, OCR in the
+  # standalone web image, the worker, idempotent migrations, org:bootstrap,
+  # db:backup with the image's pg_dump, and a retention sweep.
+  images:
+    runs-on: ubuntu-latest
+    env:
+      COMPOSE_FILE: deploy/coolify/docker-compose.ci.yml
+      COMPOSE_PROJECT_NAME: cerebro-smoke
+      COMPOSE_ENV_FILES: deploy/coolify/smoke-test.env
+    steps:
+      - uses: actions/checkout@v7
+      # `exclude_from_hc` is a Coolify-only key that plain Compose rejects.
+      - name: Compose file without Coolify-only keys
+        run: sed '/exclude_from_hc/d' deploy/coolify/docker-compose.yml > deploy/coolify/docker-compose.ci.yml
+      - name: Build images
+        run: docker compose build
+      # `up` creates web and worker only after postgres is healthy and migrate
+      # has exited 0, and fails if migrate fails.
+      - name: Start the stack (migrate must succeed before web and worker start)
+        run: |
+          docker compose up --detach web worker
+          timeout 300 sh -c 'until [ "$(docker inspect --format "{{.State.Health.Status}}" "$(docker compose ps --quiet web)")" = healthy ]; do sleep 3; done'
+      - name: Migration ran once and succeeded
+        run: |
+          docker compose logs migrate
+          test "$(docker inspect --format '{{.State.ExitCode}}' "$(docker compose ps --all --quiet migrate)")" = 0
+      - name: Liveness, readiness and no dev sign-in
+        run: docker compose exec -T web node --input-type=module - http < deploy/coolify/smoke-check.mjs
+      - name: OCR packages in the standalone web image
+        run: docker compose exec -T web node --input-type=module - ocr < deploy/coolify/smoke-check.mjs
+      - name: Worker is running
+        run: |
+          timeout 60 sh -c 'until docker compose logs worker | grep -q "\"event\":\"worker.started\""; do sleep 2; done'
+          docker compose logs worker
+      - name: Migrations are idempotent
+        run: docker compose run --rm --no-deps -T migrate | tee migrate-again.log && grep -q "Database is up to date (postgres)" migrate-again.log
+      - name: org:bootstrap creates the first owner, then changes nothing
+        run: |
+          docker compose exec -T worker npm run -s org:bootstrap -- --slug smoke --name "Smoke Test" --owner-email owner@smoke.example | tee bootstrap.log
+          grep -q "^Created company smoke" bootstrap.log
+          docker compose exec -T worker npm run -s org:bootstrap -- --slug smoke --name "Smoke Test" --owner-email owner@smoke.example | grep -q "nothing changed"
+      - name: db:backup and retention:sweep from the worker container
+        run: |
+          docker compose exec -T worker npm run -s db:backup
+          docker compose exec -T worker npm run -s retention:sweep
+      - name: Logs
+        if: failure()
+        run: docker compose logs --no-color
+      - name: Tear down
+        if: always()
+        run: docker compose down --volumes --remove-orphans
