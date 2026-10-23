@@ -84,7 +84,7 @@ export default async function HistoryPage({
       >
         {withdrawn ? (
           <p role="status" className="mb-6 rounded-md border border-success/30 bg-success-soft px-4 py-3 text-success">
-            The publication was withdrawn, along with every earlier version. Readers now see a withdrawn notice.
+            The publication was withdrawn. Every earlier version was withdrawn too, and readers now see a withdrawn notice.
           </p>
         ) : null}
         {errorCode ? (
