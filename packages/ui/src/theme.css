@@ -1,0 +1,104 @@
+/*
+ * Cerebro Tailwind v4 theme.
+ *
+ * Usage in the app's global stylesheet:
+ *   @import "tailwindcss";
+ *   @import "@cerebro/ui/theme.css";
+ *
+ * `@theme inline` makes utilities reference the runtime tokens directly, so
+ * the dark theme (and any app override of a --cb-* token) applies without a
+ * rebuild. Fonts use Tailwind's own `--font-serif` / `--font-sans`, which
+ * tokens.css sets with zero specificity for next/font to override.
+ */
+@import "./tokens.css";
+
+/* Scan the shared component packages for class names. */
+@source "./";
+@source "../../briefing-renderer/src";
+
+@theme inline {
+  /* Surfaces: bg-paper, bg-surface, bg-subtle */
+  --color-paper: var(--cb-background);
+  --color-surface: var(--cb-surface);
+  --color-subtle: var(--cb-muted);
+
+  /* Text: text-ink, text-fg, text-muted */
+  --color-ink: var(--cb-ink);
+  --color-fg: var(--cb-foreground);
+  --color-muted: var(--cb-muted-foreground);
+
+  /* Accent: bg-accent, text-accent, text-on-accent, bg-accent-soft, text-accent-ink */
+  --color-accent: var(--cb-accent);
+  --color-accent-hover: var(--cb-accent-hover);
+  --color-on-accent: var(--cb-accent-foreground);
+  --color-accent-soft: var(--cb-accent-soft);
+  --color-accent-ink: var(--cb-accent-ink);
+
+  /* Lines and focus: border-line, border-line-strong, outline-focus, ring-focus */
+  --color-line: var(--cb-border);
+  --color-line-strong: var(--cb-border-strong);
+  --color-focus: var(--cb-focus);
+
+  /* Status: text-success, bg-success-soft, ... */
+  --color-success: var(--cb-success);
+  --color-success-soft: var(--cb-success-soft);
+  --color-warning: var(--cb-warning);
+  --color-warning-soft: var(--cb-warning-soft);
+  --color-danger: var(--cb-danger);
+  --color-danger-soft: var(--cb-danger-soft);
+  --color-on-danger: var(--cb-danger-foreground);
+  --color-info: var(--cb-info);
+  --color-info-soft: var(--cb-info-soft);
+  --color-chart-muted: var(--cb-chart-muted);
+  --color-scrim: var(--cb-scrim);
+
+  /* Widths: max-w-measure, max-w-measure-wide, w-rail, w-panel (spacing) */
+  --container-measure: var(--cb-measure);
+  --container-measure-wide: var(--cb-measure-wide);
+  --spacing-rail: var(--cb-rail);
+  --spacing-panel: var(--cb-panel);
+
+  /* Radii: rounded-sm, rounded-md, rounded-lg, rounded-xl, rounded-pill */
+  --radius-sm: var(--cb-radius-sm);
+  --radius-md: var(--cb-radius-md);
+  --radius-lg: var(--cb-radius-lg);
+  --radius-xl: var(--cb-radius-xl);
+  --radius-pill: var(--cb-radius-pill);
+
+  /* Elevation: shadow-raised, shadow-overlay */
+  --shadow-raised: var(--cb-shadow-raised);
+  --shadow-overlay: var(--cb-shadow-overlay);
+
+  /* Motion: ease-standard, ease-exit (durations: duration-(--cb-duration-base)) */
+  --ease-standard: var(--cb-ease-standard);
+  --ease-exit: var(--cb-ease-exit);
+
+  /* Editorial type scale: text-display, text-headline, text-title */
+  --text-display: clamp(2.25rem, 1.6rem + 2.8vw, 3.75rem);
+  --text-display--line-height: 1.05;
+  --text-display--letter-spacing: -0.02em;
+  --text-headline: clamp(1.625rem, 1.35rem + 1.2vw, 2.25rem);
+  --text-headline--line-height: 1.15;
+  --text-headline--letter-spacing: -0.01em;
+  --text-title: 1.375rem;
+  --text-title--line-height: 1.3;
+}
+
+@layer base {
+  html {
+    background-color: var(--cb-background);
+    color: var(--cb-foreground);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--cb-focus);
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background-color: var(--cb-accent-soft);
+    color: var(--cb-ink);
+  }
+}

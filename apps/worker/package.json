@@ -1,0 +1,16 @@
+{
+  "name": "@cerebro/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/main.ts"
+  },
+  "dependencies": {
+    "@cerebro/domain": "*",
+    "@cerebro/database": "*",
+    "@cerebro/briefing-schema": "*",
+    "@cerebro/ai": "*",
+    "@cerebro/capture": "*"
+  }
+}

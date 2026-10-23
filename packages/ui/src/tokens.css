@@ -1,0 +1,192 @@
+/*
+ * Cerebro design tokens.
+ *
+ * Semantic custom properties, prefixed `--cb-`, consumed by `theme.css`
+ * (Tailwind utilities) and directly by components. Text pairs are checked for
+ * WCAG AA contrast in `tokens.test.ts`; change a value there and here together.
+ *
+ * Light theme is the default. Dark follows `prefers-color-scheme` unless the
+ * page sets `data-theme` on <html>: "light" or "dark" overrides the OS. The
+ * dark palette appears twice below (media query and explicit attribute); keep
+ * the two blocks identical (`tokens.test.ts` checks).
+ */
+
+/* Fonts sit at zero specificity so the app can override them, for example by
+   applying next/font with `variable: "--font-serif"` on <html>. */
+:where(:root) {
+  --font-serif: "Source Serif 4", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+
+:root {
+  color-scheme: light;
+
+  /* Surfaces */
+  --cb-background: #f7f4ee; /* warm paper */
+  --cb-surface: #fdfbf7; /* raised paper: cards, panels */
+  --cb-muted: #efebe3; /* quiet fills: rows, chips, table headers */
+
+  /* Text */
+  --cb-ink: #17161c; /* headlines */
+  --cb-foreground: #2a2930; /* body */
+  --cb-muted-foreground: #5d5952; /* secondary text, meta lines */
+
+  /* Accent (restrained indigo) */
+  --cb-accent: #4a43b5; /* links, primary actions, chart emphasis */
+  --cb-accent-hover: #3c3699;
+  --cb-accent-foreground: #ffffff; /* text on accent */
+  --cb-accent-soft: #e9e7f8; /* decision panel, selected chips */
+  --cb-accent-ink: #322c85; /* text on accent-soft */
+
+  /* Lines and focus */
+  --cb-border: #e2ddd3; /* decorative separators */
+  --cb-border-strong: #8b857b; /* input outlines (non-text 3:1) */
+  --cb-focus: #4a43b5;
+
+  /* Status: base is text/icon colour, soft is its background */
+  --cb-success: #1d6a40;
+  --cb-success-soft: #e3f1e7;
+  --cb-warning: #7f5100;
+  --cb-warning-soft: #f8ecd2;
+  --cb-danger: #b0261b;
+  --cb-danger-soft: #f8e3df;
+  --cb-danger-foreground: #ffffff;
+  --cb-info: #1f5b96;
+  --cb-info-soft: #e2ecf6;
+
+  /* Chart neutrals */
+  --cb-chart-muted: #c9c4bb;
+
+  /* Spacing scale (4px base) */
+  --cb-space-0: 0;
+  --cb-space-1: 0.25rem;
+  --cb-space-2: 0.5rem;
+  --cb-space-3: 0.75rem;
+  --cb-space-4: 1rem;
+  --cb-space-5: 1.5rem;
+  --cb-space-6: 2rem;
+  --cb-space-7: 3rem;
+  --cb-space-8: 4rem;
+  --cb-space-9: 6rem;
+
+  /* Layout */
+  --cb-measure: 44rem; /* reading column */
+  --cb-measure-wide: 60rem; /* briefing column incl. tables */
+  --cb-rail: 15rem; /* outline rail */
+  --cb-panel: 26rem; /* evidence / explore panel */
+
+  /* Radii */
+  --cb-radius-sm: 0.25rem;
+  --cb-radius-md: 0.5rem;
+  --cb-radius-lg: 0.75rem;
+  --cb-radius-xl: 1rem;
+  --cb-radius-pill: 999px;
+
+  /* Elevation: reserved for temporary layers */
+  --cb-shadow-raised: 0 1px 2px rgb(23 22 28 / 0.06), 0 1px 1px rgb(23 22 28 / 0.04);
+  --cb-shadow-overlay: 0 12px 32px rgb(23 22 28 / 0.16), 0 2px 6px rgb(23 22 28 / 0.08);
+  --cb-scrim: rgb(23 22 28 / 0.4);
+
+  /* Motion */
+  --cb-duration-fast: 120ms;
+  --cb-duration-base: 200ms;
+  --cb-duration-slow: 320ms;
+  --cb-ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --cb-ease-exit: cubic-bezier(0.4, 0, 1, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --cb-background: #16151a;
+    --cb-surface: #1d1c22;
+    --cb-muted: #26252c;
+
+    --cb-ink: #f4f0e8;
+    --cb-foreground: #e4dfd6;
+    --cb-muted-foreground: #aaa49a;
+
+    --cb-accent: #a9a4ff;
+    --cb-accent-hover: #c0bcff;
+    --cb-accent-foreground: #16151a;
+    --cb-accent-soft: #2a2852;
+    --cb-accent-ink: #d6d3ff;
+
+    --cb-border: #302f37;
+    --cb-border-strong: #7a7580;
+    --cb-focus: #a9a4ff;
+
+    --cb-success: #7fd1a0;
+    --cb-success-soft: #173324;
+    --cb-warning: #f0c069;
+    --cb-warning-soft: #3a2c10;
+    --cb-danger: #ff9a8f;
+    --cb-danger-soft: #3d1a17;
+    --cb-danger-foreground: #16151a;
+    --cb-info: #8fc1f2;
+    --cb-info-soft: #16293d;
+
+    --cb-chart-muted: #4a4852;
+
+    --cb-shadow-raised: 0 1px 2px rgb(0 0 0 / 0.4);
+    --cb-shadow-overlay: 0 12px 32px rgb(0 0 0 / 0.5), 0 2px 6px rgb(0 0 0 / 0.3);
+    --cb-scrim: rgb(0 0 0 / 0.6);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --cb-background: #16151a;
+  --cb-surface: #1d1c22;
+  --cb-muted: #26252c;
+
+  --cb-ink: #f4f0e8;
+  --cb-foreground: #e4dfd6;
+  --cb-muted-foreground: #aaa49a;
+
+  --cb-accent: #a9a4ff;
+  --cb-accent-hover: #c0bcff;
+  --cb-accent-foreground: #16151a;
+  --cb-accent-soft: #2a2852;
+  --cb-accent-ink: #d6d3ff;
+
+  --cb-border: #302f37;
+  --cb-border-strong: #7a7580;
+  --cb-focus: #a9a4ff;
+
+  --cb-success: #7fd1a0;
+  --cb-success-soft: #173324;
+  --cb-warning: #f0c069;
+  --cb-warning-soft: #3a2c10;
+  --cb-danger: #ff9a8f;
+  --cb-danger-soft: #3d1a17;
+  --cb-danger-foreground: #16151a;
+  --cb-info: #8fc1f2;
+  --cb-info-soft: #16293d;
+
+  --cb-chart-muted: #4a4852;
+
+  --cb-shadow-raised: 0 1px 2px rgb(0 0 0 / 0.4);
+  --cb-shadow-overlay: 0 12px 32px rgb(0 0 0 / 0.5), 0 2px 6px rgb(0 0 0 / 0.3);
+  --cb-scrim: rgb(0 0 0 / 0.6);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --cb-duration-fast: 0ms;
+    --cb-duration-base: 0ms;
+    --cb-duration-slow: 0ms;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,0 +1,57 @@
+Generated with the built-in image_gen tool on 2026-10-22.
+Status: visual concept with illustrative content; not an implemented interface.
+
+Use case: ui-mockup.
+Asset type: high-fidelity desktop product concept for Cerebro, an AI-native executive briefing platform.
+Create one exceptionally polished, realistic application screenshot, landscape approximately 16:10, front-on and edge-to-edge. No laptop, no surrounding room, no perspective tilt. This is the actual briefing reader UI, not a marketing landing page. All content is fictional sample strategy material.
+
+Art direction: quiet editorial luxury, executive clarity, meticulous typography and alignment. Warm ivory paper background #F7F5F0, near-black ink #24252A, subtle warm-gray hairlines, a restrained deep indigo #5352A3 accent, tiny sage status indicators. Large elegant editorial serif headlines paired with refined sans-serif body and interface typography. Plenty of negative space, crisp readable text, coherent functional controls. Very subtle rounded corners only for actual controls and contextual panels. No gradients or decorative AI graphics.
+
+Layout: slim horizontal top bar, a very narrow unobtrusive left document outline, wide central editorial briefing, and an open contextual evidence/Q&A panel at right, separated with a fine vertical rule. Central briefing must dominate. Large central heading at top, decision request below, a concise prose section and small purposeful chart further down. Fully composed screen with readable text at appropriate sizes; do not fill it with tiny illegible copy.
+
+Top bar: small abstract circular line mark and wordmark "cerebro" at left. Breadcrumb "Briefings / Growth strategy". At right a quiet green dot "Published", "Version 3", and small outlined "Share" button, user avatar circle with "JL".
+
+Left outline, subtle typography and spacious vertical rhythm:
+"IN THIS BRIEFING"
+"01  The recommendation" selected with a thin indigo marker
+"02  Why now"
+"03  The evidence"
+"04  Tradeoffs"
+"05  Next steps"
+At bottom of outline: "6 min read".
+
+Main column:
+Small uppercase eyebrow "STRATEGY BRIEFING  /  OCTOBER 2026"
+Large beautiful two-line serif headline:
+"Our next chapter:
+a focused move upmarket."
+Below, restrained gray metadata "Jason Lee · Updated Oct 22 · View changes".
+A small inline perspective selector labeled "Perspective" followed by pills "Overview" selected, "Finance", "Operations".
+A confident readable introductory paragraph:
+"Win larger customers by focusing our product, sales motion, and service model on the mid-market."
+A lightly tinted lavender decision panel, thin border, generous internal space:
+small label "THE DECISION"
+"Approve a 90-day mid-market pilot."
+Supporting line "A focused team. A defined investment. Clear stop-or-scale criteria."
+Right end a small arrow link "Explore the rationale".
+Below, serif section heading "Why now"
+Body "Our strongest retention and expansion come from customers with 100–1,000 employees."
+Small superscript-like outlined citation "[1]" directly after this sentence and a nearby discreet "Ask about this" control with no sparkle.
+Then a simple elegant horizontal bar chart integrated into the paper, not a dashboard card, title "Net revenue retention by segment", three rows: "Small business" 96%, "Mid-market" 124%, "Enterprise" 112%. Render proportional bars in pale gray for other segments and indigo for mid-market, numeric labels at ends. Caption "Illustrative cohort data · Q3 2026" and tiny source link "[1] Customer cohort analysis".
+At the bottom edge show the next section title "What we are choosing — and what we are deferring" to imply an unfolding narrative.
+
+Right contextual panel on slightly contrasting off-white:
+Header "Explore this briefing" and small close icon.
+Small tabs "Ask" selected and "Evidence".
+Small muted anchor label "ABOUT: THE RECOMMENDATION"
+A softly tinted user question bubble: "Why mid-market before enterprise?"
+Below a refined answer with no robot avatar:
+"Mid-market combines stronger expansion with a shorter path to value. The pilot tests that advantage before we commit to a larger enterprise motion."
+Then two short cited points:
+"124% net revenue retention [1]"
+"Lower implementation complexity [2]"
+Small source excerpt box with label "SUPPORTING EVIDENCE", title "Customer cohort analysis", metadata "Q3 2026 · Page 8", and underlined "View excerpt ↗".
+Small muted text "Grounded in Version 3 · 2 sources".
+At bottom of this panel an outlined question entry field "Ask a follow-up…" with a discreet arrow send button, and small note "Your questions are private."
+
+Constraints: The briefing should feel like a new executive communication medium with premium editorial design, not a traditional SaaS dashboard or a generic chatbot. No metric-card grid, no giant side navigation, no floating decorations, no excessive borders, no bright colors, no glassmorphism, no stock photos. Preserve clear hierarchy, restrained whitespace, strong legibility, and plausibly implementable interface structure. This is one coherent application screen, not a collage.

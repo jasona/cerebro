@@ -1,0 +1,34 @@
+@import "tailwindcss";
+@import "@cerebro/ui/theme.css";
+
+/* App sources (components outside app/ are scanned automatically from the
+   project root; the UI theme scans the shared packages). */
+
+@layer base {
+  body {
+    min-height: 100dvh;
+    background-color: var(--cb-background);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* Disclosure markers for the org tree use our own chevron. */
+details > summary {
+  list-style: none;
+}
+details > summary::-webkit-details-marker {
+  display: none;
+}
+details[open] > summary .cb-chevron {
+  transform: rotate(90deg);
+}

@@ -1,0 +1,13 @@
+# Optional: real PostgreSQL with pgvector for local development.
+# Without it, Cerebro uses embedded PGlite at .data/pglite.
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: cerebro
+      POSTGRES_PASSWORD: cerebro
+      POSTGRES_DB: cerebro
+    ports: ["5432:5432"]
+    volumes: [cerebro-pg:/var/lib/postgresql/data]
+volumes:
+  cerebro-pg: {}

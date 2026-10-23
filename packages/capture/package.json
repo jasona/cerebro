@@ -1,0 +1,16 @@
+{
+  "name": "@cerebro/capture",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "jszip": "^3.10.2",
+    "mammoth": "^1.13.0",
+    "unpdf": "^1.9.1",
+    "@cerebro/briefing-schema": "*",
+    "zod": "^4.6.7"
+  }
+}

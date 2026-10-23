@@ -1,0 +1,1 @@
+export { seedBriefings } from "./briefings";

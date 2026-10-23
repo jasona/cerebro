@@ -1,0 +1,73 @@
+Generated with the built-in image_gen tool on 2026-10-22.
+Status: exploratory company workspace concept with fictional sample content.
+
+Use case: ui-mockup.
+Create a high fidelity desktop application screenshot for Cerebro, the AI-native executive briefing platform. This is a new shared COMPANY LIBRARY screen illustrating Company > Department > Team organization, not a briefing reader or a marketing page. One coherent front-on edge-to-edge landscape screenshot approximately 16:10, no laptop frame, no surrounding scene.
+
+Visual style: exceptionally polished editorial executive software. Warm ivory #F7F5F0, deep ink #24252A, muted gray, restrained deep indigo #5352A3. Large elegant serif headings and precise sans-serif interface/body text. Thin warm-gray separators, spacious composition, almost no shadows, subtle corner radii on buttons. No dashboard metric grid or decorative stock images. Render text legibly with accurate copy. Make it feel like a shared reading room for a company's thinking.
+
+A slim top bar: circular fine-line mark and lowercase wordmark "cerebro" at left, breadcrumb "Acme / All briefs", right a discreet search icon, notification icon, circular user initials "JL".
+
+Left workspace sidebar approximately 240px:
+Company switcher "Acme" with small label "COMPANY" and chevron.
+Selected navigation item "All briefs" with subtle lavender background.
+Next items "Recently updated" and "My drafts".
+Small uppercase label "DEPARTMENTS & TEAMS".
+Show an unmistakable indented expandable tree with thin tree guide lines and small chevrons:
+"Product" expanded
+   "Platform"
+   "Experience"
+"Engineering" expanded
+   "Infrastructure"
+   "Applications"
+"Go-to-market" expanded
+   "Marketing"
+   "Sales"
+"Finance" collapsed
+Clear indentation separates departments from their teams. Company Acme sits above all of them.
+At sidebar bottom "People" and "Company settings".
+
+Main content fills the remainder, no AI chat panel. Generous 44px inset. Small uppercase eyebrow "ACME / COMPANY WORKSPACE".
+Large editorial serif title "A shared view of what’s next."
+One-line subtitle "The latest thinking, decisions, and plans from across Acme."
+Upper right prominent restrained indigo button "+ New brief".
+
+Below title a thin row of filter controls: search field "Search briefs or authors…" then "All departments" dropdown, "All teams" dropdown, "All authors" dropdown. Place subtle "Latest activity" ordering control below on right.
+A small "FEATURED BRIEFING" label followed by ONE prominent editorial feature surface with pale indigo tint and ample whitespace, no illustration:
+small badge "Company strategy"
+large serif "Our next chapter: a focused move upmarket."
+one line "The rationale, tradeoffs, and 90-day plan for our next stage of growth."
+metadata "Jason Lee · Company-wide · Updated today"
+right side quiet text link "Read briefing ↗".
+Use a horizontal feature rather than a giant tall card.
+
+Below feature title "Across the company", with small count "12 published briefs" and compact label "Visible to you".
+Five generous list rows, thin horizontal separators, no boxed card grid. Each row has a small abstract document icon, serif or medium-weight clean title, one short muted summary, department/team breadcrumb, author/avatar initials, update metadata aligned right. Enough whitespace for readability.
+Row 1 title "Building a platform teams can trust"
+summary "Our reliability priorities and what changes this quarter."
+home "Product / Platform"
+author "Maya Chen" circle "MC"
+right "Updated 2h ago" and small indigo "New version".
+Row 2 title "Infrastructure capacity for the next stage"
+summary "A measured plan for scaling systems and spend."
+home "Engineering / Infrastructure"
+author "Alex Rivera" circle "AR"
+right "Published today".
+Row 3 title "A sharper story for the mid-market"
+summary "Positioning, audience, and the launch narrative."
+home "Go-to-market / Marketing"
+author "Priya Shah" circle "PS"
+right "Updated yesterday".
+Row 4 title "Where we invest next quarter"
+summary "The tradeoffs behind our proposed investment priorities."
+home "Finance"
+author "Jordan Ellis" circle "JE"
+right "Published yesterday".
+Row 5 title "Making onboarding feel effortless"
+summary "Reducing friction from first visit to first value."
+home "Product / Experience"
+author "Sam Taylor" circle "ST"
+right "Updated 2 days ago".
+
+Small discreet company-visible icon and label "Company" on each published row to show these are browsable across teams. This is illustrative sample content. Keep the exact Company > Department > Team structure visibly understandable. The central list is the hero, emphasizes colleagues and readable brief titles, not analytics, tasks or a social media feed.
+Constraints: no excessive badges, no floating illustrations, no gradient, no glassmorphism, no metric cards, no giant AI prompt box. Crisp readable typography, premium paper-like editorial surface. The result should look genuinely implementable and consistent, like the companion library to a beautifully typeset executive briefing reader.
