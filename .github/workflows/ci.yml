@@ -221,7 +221,7 @@ jobs:
           docker compose logs migrate | grep -q "Bucket cerebro-sources created"
       - name: The object store is internal and refuses anonymous or unsigned access
         run: |
-          test -z "$(docker compose port objects 8333 2>/dev/null)"
+          ! docker compose port objects 8333 2>/dev/null | grep -Eq ":[1-9][0-9]*$"
           docker compose exec -T objects sh -c 'test "$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8333/cerebro-sources)" = 403'
           docker compose exec -T objects sh -c 'test "$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8888/buckets/)" = 401'
       - name: Liveness, readiness and no dev sign-in
