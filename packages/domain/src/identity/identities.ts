@@ -109,7 +109,12 @@ export async function resolveWebIdentity(db: Database, input: WebIdentityInput):
           for update`)
       ).rows[0];
       if (existing) {
-        if (existing.linked) return { status: "identity_conflict" };
+        if (existing.linked) {
+          // A concurrent first sign-in for this same identity may have committed
+          // after the check above; it is a conflict only if the link is someone else's.
+          const raced = await linkedUserInTx(tx, v);
+          return raced ? { status: "linked", user: raced } : { status: "identity_conflict" };
+        }
         await tx.execute(sql`
           insert into user_identities (user_id, issuer, subject) values (${existing.id}::uuid, ${v.issuer}, ${v.subject})`);
         return { status: "claimed", user: toUser(existing) };
