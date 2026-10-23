@@ -11,6 +11,7 @@ import { OcrSession } from "./ocr";
 import { normalizeText } from "./text";
 import { SOURCE_KINDS, type ErrorCategory, type ExtractionGap, type ExtractionResult, type ExtractionStats, type ExtractOptions, type ExtractSourceInput } from "./types";
 import { validateUpload } from "./validate";
+import { checkZipInflation, checkZipSafety } from "./zip";
 
 export const ExtractSourceInputSchema = z.object({
   kind: z.enum(SOURCE_KINDS),
@@ -73,6 +74,12 @@ export async function extractSource(input: ExtractSourceInput, options: ExtractO
 
   const valid = validateUpload(src, limits);
   if (!valid.ok) return failed(valid.error.code, valid.error.message);
+  if (src.kind === "docx" || src.kind === "pptx") {
+    // validateUpload checked the declared sizes; check the real ones before any parser inflates.
+    const dir = checkZipSafety(src.bytes!, limits);
+    const problem = "problem" in dir ? dir.problem : checkZipInflation(src.bytes!, dir.entries);
+    if (problem) return failed(problem.code, problem.message);
+  }
 
   const chunking = { targetCharacters: limits.targetChunkCharacters, maxCharacters: limits.maxChunkCharacters };
   let segments: Segment[] = [];

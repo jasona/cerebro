@@ -10,7 +10,7 @@ export { extractSource, ExtractSourceInputSchema } from "./extract";
 export { detectKind } from "./detect";
 export { validateUpload, type UploadError, type UploadErrorCode, type UploadValidation, type ValidateUploadInput } from "./validate";
 export { CAPTURE_LIMITS, resolveLimits, type CaptureLimits } from "./limits";
-export { checkZipSafety, readZipDirectory, checkZipEntries, type ZipEntryInfo, type ZipProblem } from "./zip";
+export { checkZipSafety, checkZipInflation, readZipDirectory, checkZipEntries, type ZipEntryInfo, type ZipProblem } from "./zip";
 export { chunkSegments, chunkText, locatorLabel, ocrLabel, type Segment, type ChunkingOptions } from "./chunk";
 export { imageFormat, isImage, readImageHeader, type ImageFormat, type ImageHeader } from "./image";
 export { DEFAULT_OCR_LANGUAGES, OcrSession, parseOcrLanguages, tesseractEngineFactory } from "./ocr";
