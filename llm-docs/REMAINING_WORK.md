@@ -68,7 +68,7 @@ What remains needs the user's credentials, infrastructure or later data:
 
 | Item | Status | Notes |
 | --- | --- | --- |
-| Backups and restore | Done (mechanism) | `npm run db:backup` / `db:restore` for PGlite, Postgres and the object store; backup → change → restore tested on both databases. Schedule, encryption and off-site copies depend on hosting |
+| Backups and restore | Done (mechanism) | `npm run db:backup` / `db:restore` for PGlite, Postgres and the object store; backup → change → restore tested on both databases. Nightly schedule, 14 kept and off-site upload decided (D26) and tested in CI; objects included with the S3 store |
 | Retention and deletion | Built, needs a decision | Per-organization policies (none set), a sweep job, source hard delete, propagation to chunks, embeddings, links and stored objects; nothing is deleted without a policy |
 | Monitoring | Done (mechanism) | `/api/health`, `/api/ready`, an allowlisted JSON logger. No error-tracking vendor is selected |
 | Rate limits | Built, needs a decision | Postgres-backed, per user and per connection, for MCP tools, Q&A and uploads; off until configured |

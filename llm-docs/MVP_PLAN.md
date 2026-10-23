@@ -139,7 +139,9 @@ Commands: `npm test`, `npm run typecheck`, `npm run test:e2e`.
 | D13 Clerk OAuth | Clerk token profile (`typ: at+jwt`, `client_id`, audience binding), refusal of session tokens, `act` tokens and opaque tokens; an audited reconnect after revocation (migration 0010); setup guide in `packages/integrations/README.md` | `oauth-clerk.test.ts` (17 tests with Clerk-shaped RS256 tokens and metadata, including same-user mapping between web sign-in and MCP) | Not exercised against a live Clerk instance, Claude or ChatGPT |
 | D14 Coolify | Web and worker images, the `deploy/coolify` compose stack, `db:provision`, `org:bootstrap`, a non-superuser restore fix, and the runbook | CI `images` job: both images build; the stack starts with migrate first; health, readiness, no dev sign-in; OCR in the web and worker images (this caught missing fonts in the slim images); idempotent migrations; `org:bootstrap`; `db:backup` and retention sweep | Not yet deployed on the Coolify instance; storage service and backup schedule open |
 
-CI on `main`: all seven jobs green (typecheck, unit on PGlite and PostgreSQL, the database CLI, Playwright on both databases, images). Vitest: 742 passed locally.
+| D25/D26 SeaweedFS and backups | SeaweedFS 4.48 S3 gateway in the Coolify stack (internal only, signed filer access, bucket created by `objects:init`); backups include every source object, prune to 14, and optionally copy off-site; `db:restore --check` | CI `s3-store` job (adapter integration tests, including server-enforced immutability); `images` job: object store refuses anonymous and unsigned access, an object stored through the app, backup with sha256-checked objects, off-site copy, restore into a fresh database and bucket | Off-site uploads use a single PUT, so each file is capped at 5 GB; backups are not encrypted by Cerebro |
+
+CI on `main`: all eight jobs green (typecheck, unit on PGlite and PostgreSQL, the database CLI, Playwright on both databases, images, the S3 store). Vitest: 742 passed locally.
 
 ### Second implementation pass — 2026-10-23
 

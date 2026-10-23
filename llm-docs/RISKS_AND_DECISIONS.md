@@ -87,7 +87,7 @@ Adopted 2026-10-23 after a security review of the second-pass production paths (
 | Shared stored objects | Deleting a content-addressed object is serialized with uploads of the same object by a per-object advisory lock, and references are rechecked just before deletion |
 | Archive inflation | DOCX/PPTX entries must inflate to exactly their declared size, capped at that size, before any parser runs; a mismatch is `unsafe_archive` |
 
-**Open for review:** whether editors of a linked briefing (not only the source's creator and owners/admins) may hard-delete a source; a per-page time limit for PDF parsing and rendering; object backup when the S3 store is selected; checking the access-token `typ`; the cross-company effect of revoking an OAuth grant; accepting tokens with no Cerebro scope; and a relink procedure if the Clerk instance (issuer) changes.
+**Open for review:** whether editors of a linked briefing (not only the source's creator and owners/admins) may hard-delete a source; a per-page time limit for PDF parsing and rendering; (object backup with the S3 store: resolved by D26); checking the access-token `typ`; the cross-company effect of revoking an OAuth grant; accepting tokens with no Cerebro scope; and a relink procedure if the Clerk instance (issuer) changes.
 
 ## Product decisions
 
