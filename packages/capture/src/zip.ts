@@ -1,9 +1,14 @@
+import { inflateRawSync } from "node:zlib";
 import type { CaptureLimits } from "./limits";
 
 export interface ZipEntryInfo {
   name: string;
   compressedSize: number;
   uncompressedSize: number;
+  /** Compression method (0 stored, 8 deflate). */
+  method: number;
+  /** Offset of the entry's local file header. */
+  localHeaderOffset: number;
 }
 
 export type ZipProblem =
@@ -13,6 +18,7 @@ export type ZipProblem =
 
 const EOCD_SIGNATURE = 0x06054b50;
 const CENTRAL_SIGNATURE = 0x02014b50;
+const LOCAL_SIGNATURE = 0x04034b50;
 
 export function isZip(bytes: Uint8Array): boolean {
   return bytes.length >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b && bytes[2] === 0x03 && bytes[3] === 0x04;
@@ -53,17 +59,19 @@ export function readZipDirectory(bytes: Uint8Array): { entries: ZipEntryInfo[] }
     if (p + 46 > len || view.getUint32(p, true) !== CENTRAL_SIGNATURE) {
       return { problem: { code: "corrupt_file", message: "The archive directory is damaged." } };
     }
+    const method = view.getUint16(p + 10, true);
     const compressedSize = view.getUint32(p + 20, true);
     const uncompressedSize = view.getUint32(p + 24, true);
     const nameLen = view.getUint16(p + 28, true);
     const extraLen = view.getUint16(p + 30, true);
     const commentLen = view.getUint16(p + 32, true);
+    const localHeaderOffset = view.getUint32(p + 42, true);
     if (p + 46 + nameLen > len) return { problem: { code: "corrupt_file", message: "The archive directory is damaged." } };
-    if (compressedSize === 0xffffffff || uncompressedSize === 0xffffffff) {
+    if (compressedSize === 0xffffffff || uncompressedSize === 0xffffffff || localHeaderOffset === 0xffffffff) {
       return { problem: { code: "unsupported_format", message: "ZIP64 archives are not supported." } };
     }
     const name = decoder.decode(bytes.subarray(p + 46, p + 46 + nameLen));
-    entries.push({ name, compressedSize, uncompressedSize });
+    entries.push({ name, compressedSize, uncompressedSize, method, localHeaderOffset });
     p += 46 + nameLen + extraLen + commentLen;
   }
   return { entries };
@@ -101,4 +109,39 @@ export function checkZipSafety(bytes: Uint8Array, limits: CaptureLimits): { entr
   if ("problem" in dir) return dir;
   const problem = checkZipEntries(dir.entries, limits);
   return problem ? { problem } : dir;
+}
+
+/**
+ * Verify that every entry inflates to exactly its declared size. Declared
+ * sizes are the archive's own claims and `checkZipEntries` trusts them; a
+ * crafted archive can declare small sizes and still inflate to gigabytes
+ * when a parser (JSZip, mammoth) reads it. Inflation here is bounded by the
+ * declared size of each entry (already within the limits), so a lying entry
+ * is refused after at most that much output. CPU-bound: call from the
+ * extraction job, not from a request handler.
+ */
+export function checkZipInflation(bytes: Uint8Array, entries: readonly ZipEntryInfo[]): ZipProblem | null {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const corrupt: ZipProblem = { code: "corrupt_file", message: "An archive entry is damaged." };
+  const lying: ZipProblem = { code: "unsafe_archive", message: "An archive entry expands beyond its declared size (possible zip bomb)." };
+  for (const e of entries) {
+    const at = e.localHeaderOffset;
+    if (at + 30 > bytes.length || view.getUint32(at, true) !== LOCAL_SIGNATURE) return corrupt;
+    const start = at + 30 + view.getUint16(at + 26, true) + view.getUint16(at + 28, true);
+    const end = start + e.compressedSize;
+    if (end > bytes.length) return corrupt;
+    if (e.method === 0) {
+      if (e.compressedSize !== e.uncompressedSize) return lying;
+      continue;
+    }
+    if (e.method !== 8) return { code: "unsupported_format", message: "The archive uses an unsupported compression method." };
+    let inflated: number;
+    try {
+      inflated = inflateRawSync(bytes.subarray(start, end), { maxOutputLength: Math.max(1, e.uncompressedSize) }).byteLength;
+    } catch (err) {
+      return (err as { code?: string }).code === "ERR_BUFFER_TOO_LARGE" || err instanceof RangeError ? lying : corrupt;
+    }
+    if (inflated !== e.uncompressedSize) return inflated > e.uncompressedSize ? lying : corrupt;
+  }
+  return null;
 }

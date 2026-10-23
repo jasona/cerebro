@@ -1,7 +1,8 @@
 /**
- * Runtime-role (cerebro_app) behavior of the tables added by migrations 0008
- * (rate_limit_counters) and 0009 (retention_policies, source deletion and the
- * narrowed revision_evidence immutability guard).
+ * Runtime-role (cerebro_app) behavior of the tables added by migrations 0007
+ * (briefing_suggestions), 0008 (rate_limit_counters) and 0009
+ * (retention_policies, source deletion and the narrowed revision_evidence
+ * immutability guard).
  */
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
@@ -9,6 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   briefingRevisions,
   briefings,
+  briefingSuggestions,
   createTestDatabase,
   rateLimitCounters,
   retentionPolicies,
@@ -77,6 +79,81 @@ describe("rate_limit_counters", () => {
       withAuthContext(h.db, as("alex"), (tx) => tx.insert(rateLimitCounters).values({ ...row(seed.users.alex), bucket: "what is the budget?" })),
     );
     expect(err.code).toBe("23514");
+  });
+});
+
+describe("briefing_suggestions", () => {
+  async function briefingIn(organizationId: string, ownerId: string) {
+    const [b] = await withSystemContext(h.db, (tx) =>
+      tx.insert(briefings).values({ organizationId, ownerId, title: "Suggestions", slug: `s-${randomUUID()}` }).returning(),
+    );
+    return b!.id;
+  }
+  const suggestion = (organizationId: string, briefingId: string, createdBy: string) => ({
+    organizationId,
+    briefingId,
+    kind: "perspective" as const,
+    baseVersion: 1,
+    payload: { perspective: { label: "Finance" }, rationale: "r" },
+    provider: "deterministic",
+    model: "deterministic-v1",
+    createdBy,
+  });
+
+  it("are tenant-isolated, and the briefing must belong to the same company", async () => {
+    const briefingId = await briefingIn(acme, seed.users.maya);
+    const [row] = await withAuthContext(h.db, as("maya"), (tx) =>
+      tx.insert(briefingSuggestions).values(suggestion(acme, briefingId, seed.users.maya)).returning(),
+    );
+    expect(await withAuthContext(h.db, as("taylor", globex), (tx) => tx.select().from(briefingSuggestions).where(eq(briefingSuggestions.id, row!.id)))).toEqual([]);
+    const cross = await pgError(() =>
+      withAuthContext(h.db, as("taylor", globex), (tx) => tx.insert(briefingSuggestions).values(suggestion(acme, briefingId, seed.users.taylor))),
+    );
+    expect(cross.code).toBe("42501");
+    // Composite tenant FK: a globex suggestion cannot point at an acme briefing, even for the owner.
+    const fk = await pgError(() =>
+      withSystemContext(h.db, (tx) => tx.insert(briefingSuggestions).values(suggestion(globex, briefingId, seed.users.taylor))),
+    );
+    expect(fk.code).toBe("23503");
+    // Cross-tenant updates touch nothing.
+    await withAuthContext(h.db, as("taylor", globex), (tx) =>
+      tx.update(briefingSuggestions).set({ status: "dismissed", decidedAt: new Date() }).where(eq(briefingSuggestions.id, row!.id)),
+    );
+    const [still] = await withSystemContext(h.db, (tx) => tx.select().from(briefingSuggestions).where(eq(briefingSuggestions.id, row!.id)));
+    expect(still!.status).toBe("pending");
+  });
+
+  it("only the decision columns are writable, rows are never deleted, and a decided suggestion is final", async () => {
+    const briefingId = await briefingIn(acme, seed.users.maya);
+    const [row] = await withAuthContext(h.db, as("maya"), (tx) =>
+      tx.insert(briefingSuggestions).values(suggestion(acme, briefingId, seed.users.maya)).returning(),
+    );
+    const id = row!.id;
+    const payload = await pgError(() =>
+      withAuthContext(h.db, as("maya"), (tx) => tx.update(briefingSuggestions).set({ payload: { tampered: true } }).where(eq(briefingSuggestions.id, id))),
+    );
+    expect(payload.code).toBe("42501");
+    const base = await pgError(() =>
+      withAuthContext(h.db, as("maya"), (tx) => tx.update(briefingSuggestions).set({ baseVersion: 99 }).where(eq(briefingSuggestions.id, id))),
+    );
+    expect(base.code).toBe("42501");
+    const del = await pgError(() => withAuthContext(h.db, as("maya"), (tx) => tx.delete(briefingSuggestions).where(eq(briefingSuggestions.id, id))));
+    expect(del.code).toBe("42501");
+
+    await withAuthContext(h.db, as("maya"), (tx) =>
+      tx.update(briefingSuggestions).set({ status: "dismissed", decidedBy: seed.users.maya, decidedAt: new Date() }).where(eq(briefingSuggestions.id, id)),
+    );
+    const reopen = await pgError(() =>
+      withAuthContext(h.db, as("maya"), (tx) =>
+        tx.update(briefingSuggestions).set({ status: "pending", decidedBy: null, decidedAt: null }).where(eq(briefingSuggestions.id, id)),
+      ),
+    );
+    expect(reopen.code).toBe("42501");
+    // Final for the owner connection too.
+    const owner = await pgError(() =>
+      withSystemContext(h.db, (tx) => tx.update(briefingSuggestions).set({ status: "accepted", appliedVersion: 2 }).where(eq(briefingSuggestions.id, id))),
+    );
+    expect(owner.code).toBe("42501");
   });
 });
 

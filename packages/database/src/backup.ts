@@ -22,7 +22,7 @@
  */
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { cp, mkdir, readdir, readFile, rename, stat, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, readdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import type { PGlite } from "@electric-sql/pglite";
@@ -73,6 +73,47 @@ function resolveTarget(t: BackupTarget) {
 
 const pgTool = (binDir: string | undefined, name: string) => (binDir ? join(binDir, name) : name);
 
+/**
+ * Split a Postgres URL into a password-free `--dbname` value and a
+ * `PGPASSWORD` environment entry. Command lines are visible to other local
+ * users (`ps`, /proc) and are quoted in child-process error messages, so the
+ * password must never be an argument.
+ */
+export function pgConnectionForTool(url: string): { dbname: string; env: Record<string, string> } {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    // Deliberately do not echo the value: it may contain a password.
+    throw new Error("DATABASE_URL is not a valid postgres:// URL");
+  }
+  const env: Record<string, string> = {};
+  const fromQuery = u.searchParams.get("password");
+  if (u.password) env.PGPASSWORD = decodeURIComponent(u.password);
+  else if (fromQuery) env.PGPASSWORD = fromQuery;
+  u.password = "";
+  u.searchParams.delete("password");
+  return { dbname: u.toString(), env };
+}
+
+/**
+ * Run pg_dump / pg_restore against `url` without exposing its password.
+ * Failures are reported with the tool, exit code and (redacted, truncated)
+ * stderr only: never the command line, which `execFile` would otherwise quote.
+ */
+export async function runPgTool(binDir: string | undefined, name: "pg_dump" | "pg_restore", url: string, args: string[]): Promise<void> {
+  const { dbname, env } = pgConnectionForTool(url);
+  try {
+    await run(pgTool(binDir, name), [`--dbname=${dbname}`, ...args], { env: { ...process.env, ...env } });
+  } catch (err) {
+    const e = err as { code?: unknown; stderr?: unknown };
+    let detail = typeof e.stderr === "string" ? e.stderr.trim().slice(-500) : "";
+    if (env.PGPASSWORD) detail = detail.split(env.PGPASSWORD).join("***");
+    const code = typeof e.code === "number" || typeof e.code === "string" ? ` (${e.code})` : "";
+    throw new Error(`${name} failed${code}${detail ? `: ${detail}` : ""}`);
+  }
+}
+
 async function dirStats(dir: string): Promise<{ files: number; bytes: number }> {
   if (!existsSync(dir)) return { files: 0, bytes: 0 };
   let files = 0;
@@ -104,6 +145,8 @@ export async function backupDatabase(target: BackupTarget = {}, outDir?: string)
   const dir = resolve(outDir ?? join(defaultBackupRoot(), stamp()));
   if (existsSync(dir) && (await readdir(dir)).length) throw new Error(`backup directory is not empty: ${dir}`);
   await mkdir(dir, { recursive: true, mode: 0o700 });
+  // A backup holds every tenant's data: keep it private even if the directory already existed.
+  await chmod(dir, 0o700);
 
   let file: string;
   let migrations: string[];
@@ -122,7 +165,8 @@ export async function backupDatabase(target: BackupTarget = {}, outDir?: string)
   } else {
     file = PGDUMP_FILE;
     migrations = await appliedMigrationsPg(t.url);
-    await run(pgTool(t.pgBinDir, "pg_dump"), ["--format=custom", "--no-owner", `--file=${join(dir, file)}`, `--dbname=${t.url}`]);
+    await runPgTool(t.pgBinDir, "pg_dump", t.url, ["--format=custom", "--no-owner", `--file=${join(dir, file)}`]);
+    await chmod(join(dir, file), 0o600);
   }
 
   if (existsSync(t.objectsDir)) await cp(t.objectsDir, join(dir, OBJECTS_DIR), { recursive: true });
@@ -142,6 +186,9 @@ export async function backupDatabase(target: BackupTarget = {}, outDir?: string)
 export async function readBackupManifest(dir: string): Promise<BackupManifest> {
   const m = JSON.parse(await readFile(join(dir, "manifest.json"), "utf8")) as BackupManifest;
   if (m.formatVersion !== BACKUP_FORMAT_VERSION) throw new Error(`unsupported backup format version ${m.formatVersion}`);
+  // The file name is fixed per kind; never follow a manifest outside the backup directory.
+  const expected = m.database?.kind === "pglite" ? PGLITE_FILE : m.database?.kind === "postgres" ? PGDUMP_FILE : null;
+  if (!expected || m.database.file !== expected) throw new Error("backup manifest names an unexpected database file");
   return m;
 }
 
@@ -191,13 +238,12 @@ export async function restoreDatabase(dir: string, target: BackupTarget = {}): P
     } finally {
       await client.end();
     }
-    await run(pgTool(t.pgBinDir, "pg_restore"), [
+    await runPgTool(t.pgBinDir, "pg_restore", t.url, [
       "--clean",
       "--if-exists",
       "--no-owner",
       "--exit-on-error",
       "--single-transaction",
-      `--dbname=${t.url}`,
       join(dir, manifest.database.file),
     ]);
   }
