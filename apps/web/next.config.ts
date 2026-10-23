@@ -12,7 +12,7 @@ const config: NextConfig = {
     "@cerebro/integrations",
   ],
   // Native/WASM server dependencies are loaded from node_modules at runtime.
-  serverExternalPackages: ["@electric-sql/pglite", "@electric-sql/pglite-pgvector", "pg", "mammoth", "unpdf", "jszip"],
+  serverExternalPackages: ["@electric-sql/pglite", "@electric-sql/pglite-pgvector", "pg", "mammoth", "unpdf", "jszip", "@aws-sdk/client-s3"],
   poweredByHeader: false,
   experimental: { serverActions: { bodySizeLimit: "20mb" } },
 };

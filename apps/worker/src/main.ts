@@ -6,6 +6,7 @@
  * process per data directory.
  */
 import { createDatabase } from "@cerebro/database";
+import { assertSourceStoreConfig } from "@cerebro/domain";
 import { assertWorkerDatabaseUrl, jsonLogger, PGLITE_REFUSAL, runWorkerLoop } from "./worker";
 
 async function main(): Promise<number> {
@@ -14,6 +15,13 @@ async function main(): Promise<number> {
     url = assertWorkerDatabaseUrl();
   } catch {
     jsonLogger("error", "worker.refused", { reason: "pglite_not_supported", detail: PGLITE_REFUSAL });
+    return 1;
+  }
+  try {
+    assertSourceStoreConfig();
+  } catch (err) {
+    // The message names configuration variables only, never their values.
+    jsonLogger("error", "worker.refused", { reason: "object_store_misconfigured", detail: (err as Error).message });
     return 1;
   }
   const handle = await createDatabase({ url });

@@ -80,7 +80,7 @@ Per D04, sharing requires authentication and an applicable grant or explicitly p
 - Tokens are high entropy, stored as hashes, and support expiry and revocation.
 - Link revocation and grant revocation are distinct operations and must be communicated clearly. Revoking a link does not silently remove unrelated direct grants.
 - Original source files require separate authorization. Evidence citations expose only approved excerpts by default.
-- Assets use private storage and short-lived signed access where appropriate.
+- Assets use private storage and short-lived signed access where appropriate. Implemented today: source bytes live in a private local or S3-compatible store under `<organizationId>/<sha256>` keys; the store refuses another tenant's key, verifies the hash on read, never sets ACLs, and no route serves bytes directly (no signed URLs are minted). Any future byte-serving route must check domain access first and may only then mint a short-lived signed URL.
 
 Authorization cannot retract information already downloaded by a reader. Expiration and revocation govern subsequent system access.
 

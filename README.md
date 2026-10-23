@@ -39,6 +39,17 @@ npm run dev            # web
 npm run worker         # background jobs (required with DATABASE_URL)
 ```
 
+### Source object storage (optional)
+
+Uploaded source files are stored privately by content hash. By default they go to `.data/objects`. To use any S3-compatible service instead, set `CEREBRO_OBJECT_STORE=s3` with `CEREBRO_S3_ENDPOINT`, `CEREBRO_S3_REGION`, `CEREBRO_S3_BUCKET` and the standard `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` (see `.env.example` for optional path-style, prefix and server-side encryption settings). No provider is assumed. The bucket must be private: Cerebro sends no ACLs, writes with `If-None-Match: *`, verifies hashes on read, and never serves bytes from the bucket directly. The web app and worker refuse to start if `s3` is selected but misconfigured.
+
+The S3 integration test (`packages/domain/src/sources/s3-store.integration.test.ts`) runs only when `TEST_S3_ENDPOINT` is set:
+
+```bash
+TEST_S3_ENDPOINT=http://127.0.0.1:9100 TEST_S3_ACCESS_KEY_ID=… TEST_S3_SECRET_ACCESS_KEY=… \
+  npx vitest run packages/domain/src/sources/s3-store.integration.test.ts
+```
+
 ## What to try
 
 1. **Library**: `/c/acme`. Shared company library, Department → Team tree, filters, search, My drafts.

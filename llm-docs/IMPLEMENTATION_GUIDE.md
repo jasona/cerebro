@@ -29,6 +29,10 @@ Dependencies are pre-installed at the root. **Do not run `npm install`** — if 
 | `AUTH_MODE` | `dev` (default locally) enables the dev identity adapter; `clerk` uses Clerk |
 | `SESSION_SECRET` | HMAC key for dev session cookies (dev default provided with a warning) |
 | `APP_URL` | Canonical base URL, default `http://localhost:3000` |
+| `CEREBRO_OBJECT_STORE` | Source byte store: `local` (default, `.data/objects` or `CEREBRO_OBJECTS_DIR`) or `s3` (any S3-compatible service). Unknown values fail at startup |
+| `CEREBRO_S3_ENDPOINT`, `CEREBRO_S3_REGION`, `CEREBRO_S3_BUCKET` | Required with `s3`; no provider endpoint or region is assumed. Startup (web `instrumentation.ts`, worker `main.ts`) fails fast, naming missing variables |
+| `CEREBRO_S3_FORCE_PATH_STYLE`, `CEREBRO_S3_PREFIX`, `CEREBRO_S3_SSE`, `CEREBRO_S3_SSE_KMS_KEY_ID` | Optional: path-style addressing (`true`/`false`), a key prefix, server-side encryption (`AES256` or `aws:kms` with an optional key id) |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` | S3 credentials (standard variables; both key variables or neither). Unset → the SDK default credential chain |
 
 ## Data access contract
 
@@ -55,7 +59,7 @@ Domain modules (each directory exports from its own `index.ts`; `src/index.ts` r
 | `publication/` | Previews (digest binding, expiry), publish transaction, withdrawal, share links, stable/pinned resolution |
 | `integration/` | Connections + connection tokens, authoring preferences, destination resolution, idempotent `integration_operations` |
 | `engagement/` | Q&A threads (private), feedback submission, engagement events, topic insights with cohort suppression, author feedback |
-| `sources/` | Source records and chunks, extraction job enqueue, briefing-source links |
+| `sources/` | Source records and chunks, extraction job enqueue, briefing-source links; the private `SourceStore` (`store.ts` local filesystem, `s3-store.ts` S3-compatible, chosen by `getSourceStore()` from the environment). Keys are `<organizationId>/<sha256>` (validated by `parseSourceKey`, shared by both adapters); `get(organizationId, key)` refuses another tenant's key and verifies the hash. No route serves source bytes; they are read only by domain services and the extraction job after an access check |
 
 Rules: validate input with Zod at every exported function; return purpose-specific DTOs (never raw rows with draft-only fields to readers); write audit events for the actions in SECURITY_AND_PUBLICATION.md; enqueue jobs in the same transaction.
 
