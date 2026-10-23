@@ -4,11 +4,11 @@
  * Postgres binaries are available.
  */
 import { existsSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { backupDatabase, restoreDatabase } from "../src/backup";
+import { backupDatabase, pgConnectionForTool, restoreDatabase, runPgTool } from "../src/backup";
 import { createDatabase, migrate } from "../src/index";
 import { backupRoundTrip } from "./backup-helpers";
 
@@ -38,5 +38,37 @@ describe("backup and restore (PGlite)", () => {
     const { dir } = await backupDatabase({ url: "", dataDir, objectsDir }, join(root, "kind-backup"));
     await expect(restoreDatabase(dir, { url: "postgres://127.0.0.1:1/none", objectsDir })).rejects.toThrow(/pglite/);
     await expect(backupDatabase({ url: "", dataDir, objectsDir }, dir)).rejects.toThrow(/not empty/);
+  });
+});
+
+describe("Postgres tool invocation", () => {
+  const URL_WITH_SECRET = "postgres://cerebro:s3cr%40t-pw@db.internal:5432/cerebro?sslmode=require";
+
+  it("keeps the password out of the command line", () => {
+    const { dbname, env } = pgConnectionForTool(URL_WITH_SECRET);
+    expect(dbname).not.toContain("s3cr");
+    expect(dbname).toBe("postgres://cerebro@db.internal:5432/cerebro?sslmode=require");
+    expect(env.PGPASSWORD).toBe("s3cr@t-pw");
+    const q = pgConnectionForTool("postgresql://u@h/db?password=qsecret&sslmode=require");
+    expect(q.dbname).not.toContain("qsecret");
+    expect(q.env.PGPASSWORD).toBe("qsecret");
+    expect(pgConnectionForTool("postgres://u@h/db").env).toEqual({});
+  });
+
+  it("never puts the password in argv or in a failure message", async () => {
+    const bin = join(root, "fake-bin");
+    const seen = join(root, "fake-argv.txt");
+    await rm(bin, { recursive: true, force: true });
+    await mkdir(bin, { recursive: true });
+    await writeFile(join(bin, "pg_dump"), `#!/bin/sh\necho "$@" > "${seen}"\necho "pg_dump: error: connection failed" >&2\nexit 1\n`);
+    await chmod(join(bin, "pg_dump"), 0o755);
+    const err = await runPgTool(bin, "pg_dump", URL_WITH_SECRET, ["--format=custom"]).then(
+      () => null,
+      (e: Error) => e,
+    );
+    expect(err).toBeInstanceOf(Error);
+    expect(err!.message).toContain("pg_dump");
+    expect(err!.message).not.toContain("s3cr");
+    expect(await readFile(seen, "utf8")).not.toContain("s3cr");
   });
 });
