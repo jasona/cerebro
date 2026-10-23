@@ -115,6 +115,16 @@ Delivered as a local, prototype-depth implementation. These are **not** pilot ex
 
 Commands: `npm test`, `npm run typecheck`, `npm run test:e2e`.
 
+### User decisions D12–D14 — 2026-10-23
+
+| Decision | Delivered | Acceptance checks run | Remaining limitations |
+| --- | --- | --- | --- |
+| D12 Anthropic | `AnthropicProvider` (official `@anthropic-ai/sdk`) for all five AI tasks: structured outputs validated against each task schema, explicit per-task effort (provisional), a cached system prompt, server-side refusal fallback, default model `claude-opus-5-5`, gated by each organization's `allowedProviders` | Unit tests with a fake SDK client (request shape, refusals, truncation, error categories, usage and cache tokens); domain tests on a migrated database (policy gating, fallback to the offline provider, honest "unavailable") | No live run yet: `npm run ai:live` and `npm run ai:eval` need an API key. Thresholds unset; answer latency against the 15-second timeout unmeasured; embedding source open |
+| D13 Clerk OAuth | Clerk token profile (`typ: at+jwt`, `client_id`, audience binding), refusal of session tokens, `act` tokens and opaque tokens; an audited reconnect after revocation (migration 0010); setup guide in `packages/integrations/README.md` | `oauth-clerk.test.ts` (17 tests with Clerk-shaped RS256 tokens and metadata, including same-user mapping between web sign-in and MCP) | Not exercised against a live Clerk instance, Claude or ChatGPT |
+| D14 Coolify | Web and worker images, the `deploy/coolify` compose stack, `db:provision`, `org:bootstrap`, a non-superuser restore fix, and the runbook | CI `images` job: both images build; the stack starts with migrate first; health, readiness, no dev sign-in; OCR in the web and worker images (this caught missing fonts in the slim images); idempotent migrations; `org:bootstrap`; `db:backup` and retention sweep | Not yet deployed on the Coolify instance; storage service and backup schedule open |
+
+CI on `main`: all seven jobs green (typecheck, unit on PGlite and PostgreSQL, the database CLI, Playwright on both databases, images). Vitest: 742 passed locally.
+
 ### Second implementation pass — 2026-10-23
 
 Built on branch `remaining-work` against `REMAINING_WORK.md`. Vendor-neutral throughout: no hosting vendor, AI provider, storage vendor or OAuth server is selected, and no limit, retention period or target is set. These are still **not** pilot exit gates.
