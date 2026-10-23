@@ -40,7 +40,7 @@ In Coolify, create a **Project** (for example `Cerebro`) and choose an **Environ
 
 1. **+ New → Application**, then pick the repository and branch (`main`).
 2. Set **Build pack** to **Docker Compose**.
-3. Set **Base Directory** to `/` and **Docker Compose Location** to `/deploy/coolify/docker-compose.yml`. The images build with the repository root as the context, as the compose file sets.
+3. Set **Base Directory** to `/deploy/coolify` and **Docker Compose Location** to `/docker-compose.yml`. Do not use Base Directory `/` with the full path. Coolify still checks out the whole repository, but it runs Compose with `--project-directory` set to the Base Directory, and relative paths in the file resolve from that directory ([`ApplicationDeploymentJob.php`](https://github.com/coollabsio/coolify/blob/main/app/Jobs/ApplicationDeploymentJob.php)). The file builds with `context: ../..`, which is the repository root only when the Base Directory is `deploy/coolify`.
 4. Coolify reads the compose file and lists its variables (step 4). After you change the compose file in Git, use **Reload Compose File**. Do not edit the rendered copy.
 5. **Domains:** assign your URL to the **`web`** service *with the container port*: `https://cerebro.example.internal:3000`. The `:3000` tells Coolify's proxy which container port to use; users still connect on 443 ([Compose build pack, domains](https://coolify.io/docs/applications/build-packs/docker-compose)). Give no other service a domain. Do not add `ports:`, because published host ports bypass the proxy.
 

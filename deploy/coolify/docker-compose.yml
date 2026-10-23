@@ -1,7 +1,11 @@
 # Cerebro on Coolify (Docker Compose build pack). Runbook: deploy/coolify/README.md.
 #
-# In Coolify: Base Directory `/`, Docker Compose Location
-# `/deploy/coolify/docker-compose.yml`. Assign the domain to the `web` service
+# In Coolify: Base Directory `/deploy/coolify`, Docker Compose Location
+# `/docker-compose.yml`. Coolify runs Compose with `--project-directory` set to
+# the Base Directory, and relative paths resolve from there; with this Base
+# Directory, `context: ../..` is the repository root both in Coolify and with
+# plain `docker compose -f deploy/coolify/docker-compose.yml`.
+# Assign the domain to the `web` service
 # with port 3000 (for example `https://cerebro.example.internal:3000`); no
 # service publishes host ports, Coolify's proxy routes to the container.
 #
