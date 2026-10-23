@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
 import { join, resolve, sep } from "node:path";
 import { findRepoRoot } from "@cerebro/database";
 
@@ -17,6 +17,12 @@ import { findRepoRoot } from "@cerebro/database";
 export interface SourceStore {
   put(organizationId: string, bytes: Uint8Array): Promise<{ key: string; sha256: string }>;
   get(key: string): Promise<Uint8Array>;
+  /**
+   * Permanently remove an object (source deletion and retention). Deleting a
+   * missing object succeeds. Keys are content-addressed per organization, so
+   * callers delete a key only once no source row references it.
+   */
+  delete(key: string): Promise<void>;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -62,6 +68,14 @@ export class LocalSourceStore implements SourceStore {
     // Integrity: the key is the content hash.
     if (sha256Hex(bytes) !== key.split("/")[1]) throw new Error("source object failed integrity check");
     return bytes;
+  }
+
+  async delete(key: string): Promise<void> {
+    try {
+      await unlink(this.pathFor(key));
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    }
   }
 }
 

@@ -1,6 +1,6 @@
 import "server-only";
 import { notFound, redirect } from "next/navigation";
-import { isDomainError, type DomainErrorCode } from "@cerebro/domain";
+import { isDomainError, retryAfterSeconds, type DomainErrorCode } from "@cerebro/domain";
 import type { ActionState, SafeErrorDetails } from "./action-state";
 
 /** User-facing copy for each domain error code. Never echoes protected data. */
@@ -31,8 +31,9 @@ export const HTTP_STATUS: Record<DomainErrorCode, number> = {
   unavailable: 503,
 };
 
-export function errorMessage(code: DomainErrorCode): string {
-  return MESSAGES[code];
+export function errorMessage(code: DomainErrorCode, details?: unknown): string {
+  const retry = code === "rate_limited" ? retryAfterSeconds(details) : undefined;
+  return retry ? `Too many attempts. Try again in ${retry} second${retry === 1 ? "" : "s"}.` : MESSAGES[code];
 }
 
 const MAX_ISSUES = 50;
@@ -64,6 +65,8 @@ export function safeErrorDetails(details: unknown): SafeErrorDetails | undefined
     const reasons = d.reasons.slice(0, MAX_REASONS).flatMap((r) => (typeof r === "string" && /^[a-z0-9_.:-]{1,64}$/i.test(r) ? [r] : []));
     if (reasons.length) out.reasons = reasons;
   }
+  const retry = retryAfterSeconds(d);
+  if (retry) out.retryAfterSeconds = retry;
   return Object.keys(out).length ? out : undefined;
 }
 
@@ -79,7 +82,7 @@ export function toActionError(err: unknown): Extract<ActionState, { status: "err
     const message =
       err.code === "validation" || err.code === "conflict" || err.code === "ambiguous" || err.code === "forbidden"
         ? err.message || MESSAGES[err.code]
-        : MESSAGES[err.code];
+        : errorMessage(err.code, err.details);
     const details = safeErrorDetails(err.details);
     return details ? { status: "error", code: err.code, message, details } : { status: "error", code: err.code, message };
   }

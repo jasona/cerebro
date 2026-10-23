@@ -6,8 +6,11 @@ import {
   getRevisionDocument,
   listLibrary,
   listMyDrafts,
+  requestTopicSummary,
   revokeConnection,
+  setLogSink,
   submitFeedback,
+  type LogRecord,
 } from "@cerebro/domain";
 import { briefingRevisions, withSystemContext } from "@cerebro/database";
 import { eq } from "drizzle-orm";
@@ -394,12 +397,54 @@ describe("author feedback", () => {
     expect(f.sc.feedback.map((x: any) => x.text)).toEqual(["When does the merged roadmap start?"]);
     expect(JSON.stringify(f)).not.toContain("PRIVATE-QUESTION");
     expect(f.text).not.toContain("PRIVATE-QUESTION");
+    // One reader's question: even the withheld-question count is suppressed (D07, W3.6).
+    await requestTopicSummary(w.h.db, w.ctx("maya"), id);
+    await drainJobs(w);
+    const after = await mcp.call("get_author_feedback", { briefing_id: id });
+    expect(after.sc.suppressed_question_count).toBeNull();
+    expect(after.sc.suppressed_question_count_suppressed).toBe(true);
+    expect(after.sc.topics).toEqual([]);
 
     // Readers cannot pull author feedback.
     const alex = await connect(w, "alex");
     const denied = await alex.call("get_author_feedback", { briefing_id: id });
     expect(denied.isError).toBe(true);
     await alex.close();
+  });
+});
+
+describe("operations", () => {
+  const saved = { ...process.env };
+  afterEach(() => {
+    process.env = { ...saved };
+    setLogSink(undefined);
+  });
+
+  it("rate-limits tool calls per connection with a retry-after, off by default", async () => {
+    for (let i = 0; i < 3; i++) expect((await mcp.call("get_authoring_context")).isError).toBeFalsy();
+    process.env.RATE_LIMIT_MCP_TOOL_PER_CONNECTION = "1/3600";
+    expect((await mcp.call("get_authoring_context")).isError).toBeFalsy();
+    const limited = await mcp.call("get_authoring_context");
+    expect(limited.isError).toBe(true);
+    expect(limited.sc.error.code).toBe("rate_limited");
+    expect(limited.sc.error.retry_after_seconds).toBeGreaterThanOrEqual(1);
+    expect(limited.text).toMatch(/retry/i);
+    // A second connection of the same user has its own budget.
+    const other = await connect(w, "maya");
+    expect((await other.call("get_authoring_context")).isError).toBeFalsy();
+    await other.close();
+  });
+
+  it("logs each tool call with name, outcome and latency, never arguments", async () => {
+    const lines: LogRecord[] = [];
+    process.env.LOG_LEVEL = "debug";
+    setLogSink((r) => lines.push(r));
+    const secret = "CONFIDENTIAL-HANDOFF-TEXT";
+    await createDraft(platformHandoff({ title: `Plan ${secret}` }));
+    const call = lines.find((l) => l.event === "mcp.tool_call");
+    expect(call).toMatchObject({ component: "mcp", tool: "create_brief_draft", outcome: "ok", code: "ok", connectionId: mcp.connectionId });
+    expect(typeof call!.latencyMs).toBe("number");
+    expect(JSON.stringify(lines)).not.toContain(secret);
   });
 });
 

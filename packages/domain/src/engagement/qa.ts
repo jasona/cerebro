@@ -23,7 +23,8 @@ import { canReadRevision, resolveBriefingAccess } from "../access/index";
 import { RequestContext } from "../context";
 import { DomainError } from "../errors";
 import { isRevisionIndexed } from "../jobs/kinds";
-import { insertAiRun } from "../jobs/summarize-topics";
+import { checkAiUsage, recordAiRun } from "../ops/ai-usage";
+import { enforceRateLimit } from "../ops/rate-limit";
 import { getAiRegistry, resolveOrgAiPolicy } from "./ai-runtime";
 import { documentTargets, resolveReadableRevision, type DocumentTargets } from "./revision";
 import { ENGAGEMENT_SETTINGS } from "./settings";
@@ -191,6 +192,7 @@ export async function askQuestion(
   const parsed = AskQuestionInput.safeParse(raw);
   if (!parsed.success) throw new DomainError("validation", "Invalid question.", { issues: parsed.error.issues.map((i) => i.message) });
   const input = parsed.data;
+  await enforceRateLimit(db, c, "qa");
 
   const prep = await withAuthContext(db, authOf(c), async (tx) => {
     const rev = await resolveReadableRevision(tx, c, input.briefingId, input.revisionNumber);
@@ -257,7 +259,9 @@ export async function askQuestion(
       generationStatus: "complete",
     });
     const policy = await resolveOrgAiPolicy(tx, c.organizationId);
+    const usage = await checkAiUsage(tx, c.organizationId);
     return {
+      usageLimited: !usage.allowed,
       preparing: false as const,
       threadId: thread.id,
       revisionId: rev.revisionId,
@@ -283,7 +287,9 @@ export async function askQuestion(
   const registry = deps.registry ?? getAiRegistry();
   let output: AnswerOutput | null = null;
   let record: AiRunRecord;
-  const candidates = registry.candidates("answer", prep.policy);
+  // Over the organization's AI usage limit, answer exactly as during an
+  // outage (principle 6): no provider call, reading is unaffected.
+  const candidates = prep.usageLimited ? [] : registry.candidates("answer", prep.policy);
   if (candidates.length === 0) {
     record = {
       task: "answer",
@@ -293,7 +299,7 @@ export async function askQuestion(
       status: "failed",
       latencyMs: 0,
       usage: {},
-      errorCategory: "unavailable",
+      errorCategory: prep.usageLimited ? "usage_limited" : "unavailable",
       revisionId: prep.revisionId,
     };
   } else {
@@ -341,7 +347,7 @@ export async function askQuestion(
         ),
       );
     if (!t) throw new DomainError("not_found", "Conversation not found.");
-    const aiRunId = await insertAiRun(tx, c.organizationId, c.userId, record);
+    const aiRunId = await recordAiRun(tx, c.organizationId, c.userId, record);
     const [msg] = await tx
       .insert(qaMessages)
       .values({

@@ -179,7 +179,9 @@ describe("summarize_topics computes distinct readers from stored reader hashes",
 
     const out = await getAuthorFeedback(w.h.db, w.ctx("maya"), { briefingId: p.briefingId });
     expect(out.topics).toEqual([]);
-    expect(out.suppressedQuestionCount).toBe(3);
+    // The 3 withheld questions come from 2 readers: the count itself is withheld (W3.6).
+    expect(out.suppressedQuestionCount).toBeNull();
+    expect(out.suppressedQuestionCountSuppressed).toBe(true);
     const stored = await sys(w, (tx) => tx.select().from(engagementInsights).where(eq(engagementInsights.briefingId, p.briefingId)));
     expect(stored.map((r) => r.topic)).toEqual(["__suppressed__"]);
   });
@@ -214,7 +216,9 @@ describe("summarize_topics computes distinct readers from stored reader hashes",
     const out = await getAuthorFeedback(w.h.db, w.ctx("maya"), { briefingId: p.briefingId });
     expect(out.topics).toHaveLength(1);
     expect(out.topics[0]).toMatchObject({ topic: "Retention", readerCount: 3, questionCount: 3 });
-    expect(out.suppressedQuestionCount).toBe(0);
+    // Nothing withheld reads the same as a withheld small cohort.
+    expect(out.suppressedQuestionCount).toBeNull();
+    expect(out.suppressedQuestionCountSuppressed).toBe(true);
     const [row] = await sys(w, (tx) =>
       tx.select().from(engagementInsights).where(and(eq(engagementInsights.briefingId, p.briefingId), eq(engagementInsights.topic, "Retention"))),
     );

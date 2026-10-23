@@ -19,7 +19,7 @@ Dependencies are pre-installed at the root. **Do not run `npm install`** — if 
 | `@cerebro/ui` | Design tokens (CSS variables), Tailwind theme, small accessible primitives |
 | `@cerebro/integrations` | MCP server (tools from LLM_INTEGRATION.md) calling domain services; connection-token auth |
 | `apps/web` | Next.js App Router application: library, reader, studio, preview/publish, sharing, engagement, admin, settings, `/api/mcp` |
-| `apps/worker` | Job runner loop: indexing, extraction, topic summaries |
+| `apps/worker` | Job runner loop: indexing, extraction, topic summaries, retention sweeps (when enabled) |
 
 ## Runtime configuration
 
@@ -29,6 +29,15 @@ Dependencies are pre-installed at the root. **Do not run `npm install`** — if 
 | `AUTH_MODE` | `dev` (default locally) enables the dev identity adapter; `clerk` uses Clerk |
 | `SESSION_SECRET` | HMAC key for dev session cookies (dev default provided with a warning) |
 | `APP_URL` | Canonical base URL, default `http://localhost:3000` |
+| `RATE_LIMIT_{MCP_TOOL,QA,UPLOAD}_PER_{USER,CONNECTION}` | `<max>/<windowSeconds>` or `off`. Off when unset; no limit has been agreed |
+| `AI_USAGE_LIMIT_RUNS`, `AI_USAGE_LIMIT_TOKENS` | Per-organization AI usage limits, `<max>/<windowSeconds>`; off when unset. `organizations.settings.ai.usageLimits` overrides per organization |
+| `RETENTION_SWEEP_INTERVAL_SECONDS` | Schedule `apply_retention` jobs; off when unset. Retention periods themselves are per-organization rows (none set) |
+| `READINESS_TOKEN` | Bearer token that unlocks full `/api/ready` details; unset → summary only |
+| `READY_MAX_QUEUED_AGE_SECONDS` | Optional readiness failure threshold for job queue age; off when unset |
+| `LOG_LEVEL` | Structured log level (`debug`, `info`, `warn`, `error`, `silent`); default `info` |
+| `PG_BIN_DIR`, `CEREBRO_BACKUP_DIR` | `pg_dump`/`pg_restore` location for `db:backup`/`db:restore` (else PATH); backup root (default `.data/backups`) |
+
+Operational modules live in `packages/domain/src/ops/` (structured logger with a redaction allowlist, limit configuration, Postgres-backed rate limiter, AI usage recording and limits, readiness, retention and source hard delete). Migrations `0008` (rate-limit counters, AI usage index) and `0009` (retention policies, source deletion with provenance severed from published evidence) add their own RLS. Invalid limit values leave the limit off and make `/api/ready` report `config` as failing.
 
 ## Data access contract
 

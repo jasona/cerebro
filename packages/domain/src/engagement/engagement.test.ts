@@ -233,7 +233,8 @@ describe("feedback", () => {
     await drainJobs(w);
     let out = await getAuthorFeedback(w.h.db, w.ctx("maya"), { briefingId: fb.id });
     expect(out.topics).toEqual([]);
-    expect(out.suppressedQuestionCount).toBe(2);
+    // Two readers' withheld questions: the count is withheld too (W3.6).
+    expect(out.suppressedQuestionCount).toBeNull();
 
     await askQuestion(w.h.db, w.ctx("jordan"), { briefingId: fb.id, question: qs.jordan });
     const req = await requestTopicSummary(w.h.db, w.ctx("maya"), fb.id);

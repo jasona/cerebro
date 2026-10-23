@@ -5,6 +5,7 @@
  * effect on the next request.
  */
 import type { Database } from "@cerebro/database";
+import { createLogger } from "@cerebro/domain";
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 import { authenticateMcpRequest, type McpAuthOptions } from "./auth";
 import { createCerebroMcpServer } from "./server";
@@ -13,6 +14,8 @@ export interface McpHttpOptions extends McpAuthOptions {
   db: Database;
   appUrl: string;
 }
+
+const logger = createLogger({ component: "mcp" });
 
 const methodNotAllowed = () =>
   new Response(JSON.stringify({ error: { code: "method_not_allowed", message: "This stateless MCP endpoint accepts POST only." } }), {
@@ -23,7 +26,11 @@ const methodNotAllowed = () =>
 /** Handle one MCP HTTP request (POST; GET/DELETE answer 405 in stateless mode). */
 export async function handleMcpHttpRequest(request: Request, opts: McpHttpOptions): Promise<Response> {
   const auth = await authenticateMcpRequest(opts.db, request, opts);
-  if (!auth.ok) return auth.response;
+  if (!auth.ok) {
+    // Never the token or the request body.
+    logger.warn("mcp.unauthenticated", { code: auth.response.status === 401 ? "unauthenticated" : String(auth.response.status) });
+    return auth.response;
+  }
   // Stateless mode: no standalone SSE stream (GET) and no session to delete.
   if (request.method !== "POST") return methodNotAllowed();
 

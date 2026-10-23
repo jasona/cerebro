@@ -107,7 +107,8 @@ export async function createBriefAction(_: ActionState, fd: FormData): Promise<A
       } catch (err) {
         // The draft exists; say the file was not attached rather than losing the draft.
         if (!isDomainError(err)) throw err;
-        destination = briefingPaths.edit(ws.org.slug, created.slug, { upload: err.code === "validation" ? "rejected" : "failed" });
+        const upload = err.code === "validation" ? "rejected" : err.code === "rate_limited" ? "limited" : "failed";
+        destination = briefingPaths.edit(ws.org.slug, created.slug, { upload });
       }
     } else {
       return { status: "error", code: "validation", message: "Choose how to start." };
@@ -117,7 +118,7 @@ export async function createBriefAction(_: ActionState, fd: FormData): Promise<A
       return {
         status: "error",
         code: err.code,
-        message: err.code === "validation" ? `${err.message || errorMessage("validation")}${issuesMessage(err)}` : errorMessage(err.code),
+        message: err.code === "validation" ? `${err.message || errorMessage("validation")}${issuesMessage(err)}` : errorMessage(err.code, err.details),
       };
     }
     throw err;

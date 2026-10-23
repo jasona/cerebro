@@ -11,6 +11,8 @@ export const ERROR_CATEGORIES = [
   "invalid_input",
   "invalid_output",
   "unsupported",
+  /** The organization reached a configured AI usage limit; no provider was called. */
+  "usage_limited",
 ] as const;
 export type AiErrorCategory = (typeof ERROR_CATEGORIES)[number];
 

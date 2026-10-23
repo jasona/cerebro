@@ -4,8 +4,12 @@ import { isDomainError } from "../errors";
 import { JobError } from "./errors";
 import { handleExtractSource } from "./extract-source";
 import { handleIndexRevision } from "./index-revision";
+import { createLogger } from "../ops/log";
+import { createRetentionScheduler, handleApplyRetention } from "../ops/retention";
 import { JOB_KINDS, type JobKind } from "./kinds";
 import { handleSummarizeTopics } from "./summarize-topics";
+
+const logger = createLogger({ component: "jobs" });
 
 export type JobHandler = (db: Database, job: Job) => Promise<void>;
 
@@ -17,7 +21,20 @@ export const JOB_HANDLERS: Record<JobKind, JobHandler> = {
   index_revision: handleIndexRevision,
   extract_source: handleExtractSource,
   summarize_topics: handleSummarizeTopics,
+  apply_retention: handleApplyRetention,
 };
+
+/** Structured log line for a job outcome: ids, kind, result and error category only. */
+export function logJobOutcome(o: JobOutcome, workerId?: string): void {
+  logger[o.result === "succeeded" ? "info" : "warn"]("job.finished", {
+    jobId: o.jobId,
+    kind: o.kind,
+    result: o.result,
+    errorCategory: o.errorCategory ?? null,
+    durationMs: o.durationMs ?? null,
+    workerId: workerId ?? null,
+  });
+}
 
 export interface RunJobsOnceOptions {
   workerId: string;
@@ -36,6 +53,8 @@ export interface JobOutcome {
   result: "succeeded" | "retrying" | "failed" | "not_held";
   /** Machine category only; never message or payload text. */
   errorCategory?: string;
+  /** Handler wall time. */
+  durationMs?: number;
 }
 
 export interface RunJobsOnceResult {
@@ -69,11 +88,12 @@ export async function runJobsOnce(db: Database, opts: RunJobsOnceOptions): Promi
   const outcomes: JobOutcome[] = [];
   for (const job of jobs) {
     const handler = handlers[job.kind];
+    const started = performance.now();
     try {
       if (!handler) throw new JobError("unknown_kind", false);
       await handler(db, job);
       const held = await completeJob(db, job.id, opts.workerId);
-      outcomes.push({ jobId: job.id, kind: job.kind, result: held ? "succeeded" : "not_held" });
+      outcomes.push({ jobId: job.id, kind: job.kind, result: held ? "succeeded" : "not_held", durationMs: Math.round(performance.now() - started) });
     } catch (err) {
       const { category, retryable } = categorizeJobError(err);
       const result = await failJob(db, {
@@ -83,7 +103,7 @@ export async function runJobsOnce(db: Database, opts: RunJobsOnceOptions): Promi
         retryable,
         ...(opts.backoffBaseMs !== undefined ? { backoffBaseMs: opts.backoffBaseMs } : {}),
       });
-      outcomes.push({ jobId: job.id, kind: job.kind, result, errorCategory: category });
+      outcomes.push({ jobId: job.id, kind: job.kind, result, errorCategory: category, durationMs: Math.round(performance.now() - started) });
     }
   }
   return { claimed: jobs.length, outcomes };
@@ -103,7 +123,7 @@ export interface InProcessJobRunner {
 export interface InProcessJobRunnerOptions {
   intervalMs: number;
   limit?: number;
-  /** Called with outcomes of every non-empty pass; must not log payloads. */
+  /** Called with outcomes of every non-empty pass; must not log payloads. Default: structured log line. */
   onOutcome?: (outcome: JobOutcome) => void;
 }
 
@@ -123,15 +143,18 @@ export function startInProcessJobRunner(db: Database, opts: InProcessJobRunnerOp
   const workerId = `inproc:${process.pid}:${randomUUID().slice(0, 8)}`;
   let running: Promise<void> | null = null;
   let stopped = false;
+  const onOutcome = opts.onOutcome ?? ((o: JobOutcome) => logJobOutcome(o, workerId));
+  const retention = createRetentionScheduler();
 
   const tick = (): Promise<void> => {
     if (stopped) return Promise.resolve();
     if (running) return running;
     running = (async () => {
       try {
+        await retention.tick(db);
         for (;;) {
           const res = await runJobsOnce(db, { workerId, limit: opts.limit ?? 5 });
-          for (const o of res.outcomes) opts.onOutcome?.(o);
+          for (const o of res.outcomes) onOutcome(o);
           if (res.claimed === 0 || stopped) break;
         }
       } catch {
