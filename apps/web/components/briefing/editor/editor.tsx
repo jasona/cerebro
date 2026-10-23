@@ -22,6 +22,7 @@ import { BLOCK_TYPE_LABELS, BLOCK_TYPE_ORDER, cleanDocument, newBlock } from "..
 import { briefingPaths } from "@/lib/paths";
 import { BlockEditor } from "./block-editors";
 import { AnnounceContext, focusSoon, Group, ItemControls, move } from "./controls";
+import { RichTextField } from "./rich-text-field";
 import { SourcesPanel } from "./sources-panel";
 
 export interface BriefingEditorProps {
@@ -78,7 +79,7 @@ const EVIDENCE_STATUSES: { value: NonNullable<EvidenceItem["status"]>; label: st
 ];
 
 /**
- * Minimal structured editor (no rich text). Holds the whole draft document
+ * Structured editor; prose fields use `RichTextField` (Tiptap). Holds the whole draft document
  * in state and saves it with `expectedVersion`; the server validates. A
  * conflict never overwrites: the author's unsaved input stays on screen and
  * they choose to reload.
@@ -322,12 +323,12 @@ export function BriefingEditor(props: BriefingEditorProps) {
 
           <Group title="Position" description="What you think, in one line, then a short summary. Readers see this first.">
             <Input id="doc-headline" label="Headline" required maxLength={500} value={doc.position.headline} onChange={(e) => update((d) => void (d.position.headline = e.target.value))} />
-            <Textarea id="doc-summary" label="Summary" required rows={3} value={doc.position.summary} onChange={(e) => update((d) => void (d.position.summary = e.target.value))} />
+            <RichTextField id="doc-summary" label="Summary" required rows={3} value={doc.position.summary} onChange={(v) => update((d) => void (d.position.summary = v))} />
           </Group>
 
           <Group title="Why it matters">
-            <Textarea id="doc-stakes" label="Stakes" required rows={3} value={doc.context.stakes} onChange={(e) => update((d) => void (d.context.stakes = e.target.value))} />
-            <Textarea id="doc-background" label="Background" rows={3} value={doc.context.background ?? ""} onChange={(e) => update((d) => void (d.context.background = e.target.value))} />
+            <RichTextField id="doc-stakes" label="Stakes" required rows={3} value={doc.context.stakes} onChange={(v) => update((d) => void (d.context.stakes = v))} />
+            <RichTextField id="doc-background" label="Background" rows={3} value={doc.context.background ?? ""} onChange={(v) => update((d) => void (d.context.background = v))} />
           </Group>
 
           <Group title="Request" description="What readers are asked to do.">
@@ -344,7 +345,7 @@ export function BriefingEditor(props: BriefingEditorProps) {
               ]}
             />
             <Input id="doc-request-statement" label="Statement" required maxLength={500} value={doc.request.statement} onChange={(e) => update((d) => void (d.request.statement = e.target.value))} />
-            <Textarea id="doc-request-detail" label="Detail" rows={2} value={doc.request.detail ?? ""} onChange={(e) => update((d) => void (d.request.detail = e.target.value))} />
+            <RichTextField id="doc-request-detail" label="Detail" rows={2} value={doc.request.detail ?? ""} onChange={(v) => update((d) => void (d.request.detail = v))} />
             <Input id="doc-request-due" label="Needed by" hint="YYYY-MM or YYYY-MM-DD" value={doc.request.dueDate ?? ""} onChange={(e) => update((d) => void (d.request.dueDate = e.target.value))} />
           </Group>
 
@@ -531,7 +532,7 @@ function SectionsEditor({ doc, update }: { doc: BriefingDocument; update: (fn: (
                 requestAnimationFrame(() => {
                   const el = document.getElementById(`edit-${block.id}`);
                   el?.scrollIntoView({ block: "center" });
-                  el?.querySelector<HTMLElement>("input, textarea, select")?.focus();
+                  el?.querySelector<HTMLElement>("input, textarea, select, [contenteditable='true']")?.focus();
                 });
               }}
             >
@@ -598,7 +599,7 @@ function PerspectivesEditor({
             <Input id={`psp-${p.id}-label`} label="Label" required maxLength={60} hint="e.g. Finance" value={p.label} onChange={(e) => update((d) => void (d.perspectives[pi]!.label = e.target.value))} />
             <Input id={`psp-${p.id}-audience`} label="Written for" hint="e.g. Finance leadership" value={p.audience ?? ""} onChange={(e) => update((d) => void (d.perspectives[pi]!.audience = e.target.value))} />
           </div>
-          <Textarea id={`psp-${p.id}-summary`} label="Summary" rows={3} fieldClassName="mt-4" value={p.summary} onChange={(e) => update((d) => void (d.perspectives[pi]!.summary = e.target.value))} />
+          <RichTextField id={`psp-${p.id}-summary`} label="Summary" rows={3} fieldClassName="mt-4" value={p.summary} onChange={(v) => update((d) => void (d.perspectives[pi]!.summary = v))} />
           <fieldset className="mt-4">
             <legend className="text-sm font-medium text-ink">Emphasised sections</legend>
             {sections.length ? (
