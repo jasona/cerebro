@@ -128,8 +128,9 @@ describe("protected resource metadata (RFC 9728)", () => {
   });
 
   it("derives the resource from APP_URL; production never falls back to the request origin", () => {
-    expect(oauthConfig({ CEREBRO_OAUTH_ISSUER: ISSUER, NODE_ENV: "test" }, "http://localhost:3999")?.resource).toBe("http://localhost:3999/api/mcp");
-    expect(oauthConfig({ CEREBRO_OAUTH_ISSUER: ISSUER, NODE_ENV: "production" }, "https://evil.example")).toBeNull();
+    // No APP_URL: OAuth stays off in every environment (the audience never comes from the Host header).
+    expect(oauthConfig({ CEREBRO_OAUTH_ISSUER: ISSUER, NODE_ENV: "test" })).toBeNull();
+    expect(oauthConfig({ CEREBRO_OAUTH_ISSUER: ISSUER, NODE_ENV: "production" })).toBeNull();
     expect(oauthConfig({ CEREBRO_OAUTH_ISSUER: ISSUER, NODE_ENV: "production", APP_URL: "https://cerebro.example/" })).toMatchObject({
       resource: "https://cerebro.example/api/mcp",
       resourceMetadataUrl: "https://cerebro.example/.well-known/oauth-protected-resource/api/mcp",

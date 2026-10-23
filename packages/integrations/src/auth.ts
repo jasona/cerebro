@@ -93,7 +93,7 @@ export function forbiddenResponse(
 /** Resolve the request's bearer credential to a RequestContext and scopes, or an error response. */
 export async function authenticateMcpRequest(db: Database, request: Request, opts: McpAuthOptions = {}): Promise<McpAuthResult> {
   const env = opts.env ?? process.env;
-  const oauth = oauthConfig(env, opts.appUrl);
+  const oauth = oauthConfig(env);
   const header = request.headers.get("authorization") ?? "";
   const match = /^Bearer\s+(\S+)\s*$/i.exec(header);
   const token = match?.[1];

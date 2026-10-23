@@ -48,16 +48,14 @@ export interface OAuthResourceConfig {
 /**
  * OAuth resource configuration, or null when the OAuth path is off.
  *
- * The resource URL comes from `APP_URL`. Outside production it may fall back
- * to `fallbackAppUrl` (the request origin); in production a missing `APP_URL`
- * disables OAuth rather than deriving the audience from a client-controlled
- * Host header.
+ * The resource URL comes only from `APP_URL`. Without it OAuth stays off, in
+ * every environment: deriving the audience from the request origin would let a
+ * client-controlled Host header choose which tokens are accepted.
  */
-export function oauthConfig(env: Env = process.env, fallbackAppUrl?: string): OAuthResourceConfig | null {
+export function oauthConfig(env: Env = process.env): OAuthResourceConfig | null {
   const issuer = env.CEREBRO_OAUTH_ISSUER?.trim();
   if (!issuer) return null;
-  const configured = env.APP_URL?.trim();
-  const base = (configured || (env.NODE_ENV === "production" ? "" : (fallbackAppUrl ?? ""))).replace(/\/+$/, "");
+  const base = (env.APP_URL?.trim() ?? "").replace(/\/+$/, "");
   if (!base) return null;
   return {
     issuer,
@@ -84,7 +82,7 @@ export function protectedResourceMetadata(cfg: OAuthResourceConfig): Record<stri
  * not exist.
  */
 export function protectedResourceMetadataResponse(opts: { env?: Env; appUrl?: string } = {}): Response {
-  const cfg = oauthConfig(opts.env ?? process.env, opts.appUrl);
+  const cfg = oauthConfig(opts.env ?? process.env);
   if (!cfg) {
     return new Response(JSON.stringify({ error: { code: "not_found", message: "OAuth is not configured for this deployment." } }), {
       status: 404,

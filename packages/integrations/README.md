@@ -19,7 +19,7 @@ Tools: `get_authoring_context`, `create_brief_draft`, `get_operation`, `find_bri
 - A 401 response carries `WWW-Authenticate: Bearer resource_metadata="…", scope="…"`.
 - Each token is verified against the issuer's JWKS, using `CEREBRO_OAUTH_JWKS_URL` or discovery from the issuer's RFC 8414 or OpenID metadata. Only asymmetric algorithms are accepted. The token must also have:
   - `iss` equal to the configured issuer;
-  - `aud` containing `APP_URL + /api/mcp`. In production this comes only from `APP_URL`, never from the Host header;
+  - `aud` containing `APP_URL + /api/mcp`. This comes only from `APP_URL`, never from the Host header, so OAuth stays off until `APP_URL` is set;
   - a valid `exp`, a `sub`, and a `client_id` (or `azp`).
 - Opaque tokens would need introspection, which is not implemented.
 - The domain call `authenticateOAuthGrant` maps `sub` to a user. The mapping uses only the explicit `user_identities` link for (issuer, subject); unknown subjects are refused and nobody is provisioned.
