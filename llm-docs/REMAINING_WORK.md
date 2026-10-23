@@ -81,7 +81,7 @@ These need the user, not an agent. Implementation should not guess them.
 | Cost controls | Built, needs a decision | Per-organization AI usage recording and optional limits; Q&A and suggestions degrade as during an outage. No admin UI yet |
 | Latency measurement | Done (measurement) | `npm run perf` prints p50/p95 for key operations; no targets |
 | Accessibility audit | Removed | Removed from scope by the user on 2026-10-23. Principle 9 in `AGENTS.md` is unchanged |
-| Security review | Done | Production paths reviewed; 10 fixes with regression tests, recorded as D11. Its open items are listed there. Repeat for the production auth path once real vendors are configured |
+| Security review | Done | Production paths reviewed; 11 fixes with regression tests, recorded as D11. Its open items are listed there. Repeat for the production auth path once real vendors are configured |
 | Pilot gates | Open | Needs the P12 targets |
 
 ## Known noise (not defects)
