@@ -17,7 +17,7 @@ Status key:
 ## Next steps
 
 1. **Decision session (W0):** this is now the main blocker.
-2. **Merge and CI:** review `remaining-work`, merge it to `main`, and confirm the GitHub Actions workflow passes. It has not yet run on GitHub.
+2. **Merge:** review `remaining-work` and merge it to `main`. CI passes on the branch (all six jobs).
 3. **Per decision, connect and re-test:** each W2 item lists what to run once its vendor or value is chosen.
 4. **Pilot gates:** run them once the P12 targets exist.
 
@@ -46,7 +46,7 @@ These need the user, not an agent. Implementation should not guess them.
 | Item | Status | Evidence |
 | --- | --- | --- |
 | First commit | Done | `main` on GitHub, `4f5a19c` |
-| CI | Done; not yet run on GitHub | `.github/workflows/ci.yml`: typecheck, Vitest on PGlite and Postgres, the database CLI, and Playwright on both databases |
+| CI | Done; passing on GitHub | `.github/workflows/ci.yml`: typecheck, Vitest on PGlite and Postgres, the database CLI, and Playwright on both databases |
 | Migration drift check | Done | `packages/database/test/schema-drift.test.ts`. It caught one real drift during the second-pass merges |
 
 ## W2 Production foundations

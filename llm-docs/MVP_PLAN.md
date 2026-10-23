@@ -121,7 +121,7 @@ Built on branch `remaining-work` against `REMAINING_WORK.md`. Vendor-neutral thr
 
 | Item | Delivered | Acceptance checks run | Remaining limitations |
 | --- | --- | --- | --- |
-| W1 | CI workflow; schema drift check; `E2E_PORT` | Drift test (it caught one real drift during merges) | CI not yet run on GitHub |
+| W1 | CI workflow; schema drift check; `E2E_PORT` | Drift test (it caught one real drift during merges); CI green on GitHub (all six jobs on `remaining-work`) | — |
 | W2.1 | `TEST_DATABASE_URL` test mode; pooled-connection leak regression test; owner privileges documented | Full Vitest suite and all Playwright journeys on PostgreSQL 17.6 with pgvector 0.8.1, with a separate worker processing jobs; `db:reset` then `db:migrate` is idempotent | Managed-host privileges unconfirmed; no PGlite-to-Postgres data move |
 | W2.2 | Clerk mode with `user_identities` links (migration 0006); MCP OAuth protected resource with scopes and revocable grants | `oauth.test.ts` (token, audience, issuer, expiry, algorithm, scope, revocation, membership), `identity.test.ts` (Clerk mocked), RLS tests for 0006 | No Clerk keys; no authorization server chosen; no host verification |
 | W2.3 | S3-compatible source store; organization-scoped get and delete | `s3-store.integration.test.ts` against MinIO built from source: roundtrip, immutable re-put, tamper detection, cross-tenant rejection, upload and extraction | Store vendor unselected |

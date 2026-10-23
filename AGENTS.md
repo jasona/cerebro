@@ -14,7 +14,7 @@ Lifecycle: **Capture → Compose → Publish → Engage → Analyze → Evolve.*
 
 - **Phase:** Second implementation pass complete (2026-10-23) on branch `remaining-work`. Every `llm-docs/REMAINING_WORK.md` item that needs no user decision is built, and the vendor-neutral part of each remaining item is built. See "Completion evidence" in `llm-docs/MVP_PLAN.md`. Architecture review is still pending, and nothing is production-ready or pilot-ready.
 - **Code:** npm-workspace monorepo (`apps/web`, `apps/worker`, `packages/*`), described in `README.md` and `llm-docs/IMPLEMENTATION_GUIDE.md`. It has SQL migrations with RLS, Vitest suites (unit, security regression, and RLS under the runtime role) and Playwright journeys.
-- **Repository:** GitHub `jasona/cerebro`, default branch `main`. Second-pass work is on `remaining-work`, pending merge. CI is in `.github/workflows/ci.yml`.
+- **Repository:** GitHub `jasona/cerebro`, default branch `main`. Second-pass work is on `remaining-work` (pushed), pending merge. CI (`.github/workflows/ci.yml`) passes on GitHub.
 - **Decisions:** D01–D02 were set by the user. D03–D10, the implementation amendments T07 and T16–T22, and the second-pass selections T23–T29 were adopted to unblock implementation at the user's direction; all are subject to architecture review. P13/P14 remain proposals.
 - **Not production:** Clerk, MCP OAuth (resource-server side), S3-compatible storage, AI provider wiring, rate limits, AI usage limits and retention are built but unconfigured, because no vendor, limit or retention period has been chosen. Local development still uses the dev sign-in, dev connection tokens, the deterministic AI provider and the filesystem store.
 
