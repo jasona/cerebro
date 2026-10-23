@@ -52,6 +52,7 @@ import { z } from "zod";
 import { describeAudience, evidenceLines, previewText } from "./format";
 import { guardDocumentEvidence, mergeHandoffIntoDraft } from "./merge";
 import { fail, ok, toToolError } from "./results";
+import { TOOL_SCOPES, type McpScope, type McpToolName } from "./scopes";
 
 export interface CerebroMcpServerOptions {
   db: Database;
@@ -59,6 +60,8 @@ export interface CerebroMcpServerOptions {
   ctx: RequestContext;
   /** Canonical base URL of the Cerebro web app, without a trailing slash. */
   appUrl: string;
+  /** Scopes granted to this connection (`./scopes`); each tool requires one. */
+  scopes: ReadonlySet<McpScope>;
 }
 
 export const SERVER_INSTRUCTIONS = [
@@ -121,7 +124,7 @@ function splitIssues(issues: DocumentIssue[]) {
   };
 }
 
-export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOptions): McpServer {
+export function createCerebroMcpServer({ db, ctx, appUrl, scopes }: CerebroMcpServerOptions): McpServer {
   const base = appUrl.replace(/\/+$/, "");
   const server = new McpServer({ name: "cerebro", version: "0.1.0" }, { instructions: SERVER_INSTRUCTIONS });
 
@@ -131,8 +134,14 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
     edit_url: `${base}${canonicalPath}/edit`,
   });
 
-  // Run a handler, mapping thrown errors to tool errors.
-  const run = async <T>(fn: () => Promise<T>) => {
+  // Run a tool handler: require the tool's scope (defense in depth; the HTTP
+  // layer already answered 403 insufficient_scope), then map thrown errors to
+  // tool errors. Resource permissions are still checked by the domain.
+  const run = async <T>(tool: McpToolName, fn: () => Promise<T>) => {
+    const scope = TOOL_SCOPES[tool];
+    if (!scopes.has(scope)) {
+      return fail("forbidden", `This connection is not authorized for ${scope}.`, { reason: "insufficient_scope", scope }, "Ask the user to reconnect Cerebro and grant this permission.");
+    }
     try {
       return await fn();
     } catch (e) {
@@ -151,7 +160,7 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     () =>
-      run(async () => {
+      run("get_authoring_context", async () => {
         const ac = await getAuthoringContext(db, ctx);
         const all = [ac.destinations.company, ...ac.destinations.departments, ...ac.destinations.teams];
         const text = [
@@ -196,7 +205,7 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
     ({ handoff, idempotency_key }) =>
-      run(async () => {
+      run("create_brief_draft", async () => {
         const parsed = parseHandoff(handoff);
         if (!parsed.ok) return fail("validation", "The handoff package is invalid.", { issues: parsed.issues });
         const h = parsed.handoff;
@@ -316,7 +325,7 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     ({ operation_id }) =>
-      run(async () => {
+      run("get_operation", async () => {
         const o = await getOperation(db, ctx, operation_id);
         return ok(`Operation ${o.id} (${o.action}): ${o.status}.`, {
           operation_id: o.id,
@@ -346,7 +355,7 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     ({ query, limit, include_drafts }) =>
-      run(async () => {
+      run("find_briefs", async () => {
         const res = await searchBriefings(db, ctx, { q: query, limit: limit ?? 20 });
         const q = query.toLowerCase();
         const drafts = include_drafts === false ? [] : (await listMyDrafts(db, ctx)).filter((d) => d.title.toLowerCase().includes(q));
@@ -399,7 +408,7 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     ({ briefing_id, view, revision_number }) =>
-      run(async () => {
+      run("get_brief", async () => {
         const meta = await getBriefingMeta(db, ctx, briefing_id);
         const common = {
           briefing_id,
@@ -466,7 +475,7 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
     (args) =>
-      run(async () => {
+      run("update_brief_draft", async () => {
         const { briefing_id, expected_version, document, handoff, evidence_decisions, idempotency_key } = args;
         if (document && handoff) return fail("validation", "Provide either document or handoff, not both.");
         if (!document && !handoff && !evidence_decisions?.length) {
@@ -558,7 +567,7 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
     },
     ({ briefing_id, expected_version }) =>
-      run(async () => {
+      run("preview_brief", async () => {
         const p = await createPreview(db, ctx, { briefingId: briefing_id, ...(expected_version ? { expectedVersion: expected_version } : {}) });
         const meta = await getBriefingMeta(db, ctx, briefing_id);
         const u = urls(meta.canonicalPath);
@@ -608,7 +617,7 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
     ({ briefing_id, preview_id, change_summary, idempotency_key }) =>
-      run(async () => {
+      run("publish_brief", async () => {
         const op = await runIdempotent(
           db,
           ctx,
@@ -677,7 +686,7 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     ({ briefing_id }) =>
-      run(async () => {
+      run("get_author_feedback", async () => {
         const f = await getAuthorFeedback(db, ctx, { briefingId: briefing_id });
         const text = [
           `${f.feedback.length} submitted feedback item(s); ${f.topics.length} aggregate topic(s).`,

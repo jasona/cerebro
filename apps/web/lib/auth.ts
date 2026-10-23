@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { cache } from "react";
 import { eq, like, asc } from "drizzle-orm";
 import { getDatabase, users, withSystemContext } from "@cerebro/database";
+import { resolveClerkSession, type ClerkSignInReason } from "./clerk-identity";
 import { authMode } from "./env";
 import { decodeSession, SESSION_COOKIE } from "./session-token";
 
@@ -36,26 +37,29 @@ async function findUserBySubject(authSubject: string): Promise<SessionUser | nul
   return row ? { userId: row.id, name: row.name, email: row.email, authSubject: row.authSubject } : null;
 }
 
-async function resolveSubject(): Promise<string | null> {
+export type SignInState = { user: SessionUser; reason?: undefined } | { user: null; reason: "signed_out" | ClerkSignInReason };
+
+/**
+ * The current sign-in state. Memoised per request.
+ *
+ * - dev: the signed dev session cookie names a `dev|*` auth subject.
+ * - clerk (D08): Clerk authenticates (clerkMiddleware runs in proxy.ts);
+ *   the Clerk user maps to a Cerebro user through an explicit identity link
+ *   (clerk-identity.ts). Cerebro still authorizes everything.
+ */
+export const getSignInState = cache(async (): Promise<SignInState> => {
   if (authMode() === "dev") {
     const jar = await cookies();
-    return decodeSession(jar.get(SESSION_COOKIE)?.value)?.sub ?? null;
+    const subject = decodeSession(jar.get(SESSION_COOKIE)?.value)?.sub;
+    const user = subject ? await findUserBySubject(subject) : null;
+    return user ? { user } : { user: null, reason: "signed_out" };
   }
-  // Clerk adapter (stub, D08): Clerk authenticates, Cerebro authorizes.
-  // Requires clerkMiddleware in proxy.ts, which only runs when AUTH_MODE=clerk.
-  const { auth } = await import("@clerk/nextjs/server");
-  const { userId } = await auth();
-  return userId ? `clerk|${userId}` : null;
-}
+  const { db } = await getDatabase();
+  return resolveClerkSession(db);
+});
 
 /** The signed-in Cerebro user, or null. Memoised per request. */
-export const getSessionUser = cache(async (): Promise<SessionUser | null> => {
-  const subject = await resolveSubject();
-  if (!subject) return null;
-  // Clerk users without a provisioned `users` row resolve to null; account
-  // provisioning on first Clerk sign-in is not implemented yet.
-  return findUserBySubject(subject);
-});
+export const getSessionUser = cache(async (): Promise<SessionUser | null> => (await getSignInState()).user);
 
 /** Only allow same-origin relative paths as post-sign-in destinations. */
 export function safeNextPath(next: unknown, fallback = "/"): string {

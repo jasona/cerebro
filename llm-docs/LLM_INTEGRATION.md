@@ -122,6 +122,20 @@ A normal web login alone does not establish a delegated MCP authorization flow. 
 
 Support revocation, expired-token recovery, company policy, and revalidation of membership. Connection metadata records client identity and the relevant grant or token reference. Do not build a custom production token issuer merely to avoid the compatibility review.
 
+### Implemented auth contract (resource-server side, W2.2)
+
+The authorization server is still unchosen (T13). Cerebro implements only the protected-resource side of the MCP authorization spec. Details are in `packages/integrations/README.md`.
+
+- **Metadata.** RFC 9728 metadata is served at `/.well-known/oauth-protected-resource/api/mcp`. It names the issuer configured in `CEREBRO_OAUTH_ISSUER`, which is unset by default; while it is unset there is no metadata and every JWT is refused. A 401 carries `WWW-Authenticate: Bearer resource_metadata="…", scope="…"`.
+- **Tokens.** Access tokens are JWTs verified against the issuer's JWKS with asymmetric algorithms only. The token's `iss` must equal the configured issuer. Its `aud` must contain the MCP resource URL (`APP_URL` + `/api/mcp`); tokens for other resources are refused and never passed through. The token also needs a valid `exp`, a `sub`, and a client (`client_id` or `azp`). Opaque tokens would need introspection, which is not implemented.
+- **Identity.** `sub` maps to a Cerebro user only through an explicit identity link (`user_identities`: issuer + subject). Unknown subjects are refused. Clerk web sign-in creates these links (issuer = the Clerk session issuer). If the chosen authorization server is Clerk, OAuth subjects therefore resolve automatically. If another server is chosen, it needs an account-linking step that does not exist yet.
+- **Grants.** Each grant is an `integration_connections` row with `kind = 'oauth'`, one per company, user, issuer and client. Grants are listed and revoked in Settings like connection tokens.
+  - A revoked grant refuses tokens until the user authorizes again: the token's `auth_time` must be later than the revocation. Tokens without `auth_time` stay refused.
+  - Membership is rechecked on every request.
+  - A grant binds to the user's only active company. Users with several companies get `company_selection_required` until a selection step exists.
+- **Scopes.** `cerebro:read` covers context, finding and reading briefs, operations and feedback. `cerebro:draft` covers creating and updating drafts and previewing. `cerebro:publish` covers `publish_brief`. A missing scope returns HTTP 403 `insufficient_scope` and is rechecked per tool. Scopes never replace resource permissions.
+- **Dev tokens.** Connection tokens (`cbr_`) carry all scopes. They stay refused in production unless `CEREBRO_ALLOW_DEV_CONNECTION_TOKENS=1`.
+
 ## Host experience and rollout
 
 ChatGPT is a proposed first integration target, not an approved distribution commitment. Validate account availability, workspace policy, OAuth behavior, write permissions, file transfer, and distribution requirements before promising access.

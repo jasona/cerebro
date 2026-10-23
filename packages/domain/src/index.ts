@@ -3,6 +3,7 @@ export * from "./errors";
 export * from "./audit";
 export * from "./access/index";
 export * from "./org/index";
+export * from "./identity/index";
 export * from "./library/index";
 export * from "./briefings/index";
 export * from "./publication/index";
