@@ -3,7 +3,7 @@
  * machine-readable) and a concise `content` text for hosts that only show
  * text. Errors carry a stable `code` and set `isError: true`.
  */
-import { isDomainError } from "@cerebro/domain";
+import { isDomainError, retryAfterSeconds } from "@cerebro/domain";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 export type ToolErrorCode =
@@ -47,7 +47,7 @@ const HINTS: Partial<Record<ToolErrorCode, string>> = {
   unauthenticated: "The Cerebro connection is invalid, expired or revoked. Ask the user to reconnect Cerebro; never ask for credentials in the conversation.",
   forbidden: "The connected account is not allowed to do this.",
   not_found: "It does not exist in this company, or the connected account cannot see it.",
-  rate_limited: "Too many requests. Wait before retrying.",
+  rate_limited: "Too many requests. Wait retry_after_seconds before retrying; tell the user if they are waiting.",
   unavailable: "Cerebro could not complete the request. It is safe to retry with the same idempotency_key.",
   validation: "Fix the listed issues and retry. Do not invent content, evidence or numbers to clear them.",
 };
@@ -56,6 +56,13 @@ const HINTS: Partial<Record<ToolErrorCode, string>> = {
 export function toToolError(e: unknown): CallToolResult {
   if (isDomainError(e)) {
     const code: ToolErrorCode = e.code === "ambiguous" ? "ambiguous_destination" : e.code;
+    if (code === "rate_limited") {
+      const retry = retryAfterSeconds(e.details);
+      const res = fail(code, e.message, retry ? { retry_after_seconds: retry } : undefined, HINTS[code]);
+      // Also at the top level of the error, where hosts look for it first.
+      if (retry) (res.structuredContent as { error: Record<string, unknown> }).error.retry_after_seconds = retry;
+      return res;
+    }
     return fail(code, e.message, e.details, HINTS[code]);
   }
   return fail("unavailable", "Unexpected server error.", undefined, HINTS.unavailable);

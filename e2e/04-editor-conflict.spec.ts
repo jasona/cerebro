@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { PRIVATE_DRAFT_TITLE, contextAs, uid } from "./helpers";
+import { PRIVATE_DRAFT_TITLE, contextAs, settle, uid } from "./helpers";
 
 test.describe("editor conflict", () => {
   test.skip(({ isMobile }) => isMobile, "desktop only");
@@ -14,6 +14,8 @@ test.describe("editor conflict", () => {
 
       for (const p of [a.page, b.page]) {
         await p.goto(editPath);
+        // fill() before hydration can lose its select-all and prepend instead of replacing.
+        await settle(p);
         await expect(p.getByRole("status").filter({ hasText: /All changes saved · draft version \d+/ })).toBeVisible();
       }
 
@@ -32,11 +34,11 @@ test.describe("editor conflict", () => {
       await expect(conflict).toBeVisible();
       await expect(conflict).toContainText("Nothing was overwritten.");
       await expect(b.page.getByRole("status").filter({ hasText: "Not saved: changed elsewhere" })).toBeVisible();
-      await expect(b.page.getByRole("textbox", { name: "Summary (required)", exact: true })).toHaveValue(summaryB);
+      await expect(b.page.getByRole("textbox", { name: "Summary (required)", exact: true })).toHaveText(summaryB);
 
       // The server kept A's change.
       await a.page.reload();
-      await expect(a.page.getByRole("textbox", { name: "Summary (required)", exact: true })).toHaveValue(summaryA);
+      await expect(a.page.getByRole("textbox", { name: "Summary (required)", exact: true })).toHaveText(summaryA);
     } finally {
       await a.context.close();
       await b.context.close();

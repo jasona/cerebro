@@ -196,7 +196,11 @@ export default async function EngagementPage({ params }: { params: Promise<Brief
               <p className="mt-3 text-sm text-muted">
                 {plural(summary.topics.suppressedQuestionCount, "question")} in topics with fewer than {summary.minCohort} readers — hidden for privacy.
               </p>
-            ) : null}
+            ) : (
+              <p className="mt-3 text-sm text-muted">
+                Questions from fewer than {summary.minCohort} readers are not counted or summarized here, for privacy.
+              </p>
+            )}
             <ActionForm action={requestTopicSummaryAction} submitLabel="Refresh topic summary" submitVariant="secondary" pendingLabel="Requesting…" className="mt-4">
               {hidden}
             </ActionForm>

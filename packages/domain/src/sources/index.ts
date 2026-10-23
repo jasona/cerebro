@@ -15,7 +15,19 @@ export {
   type ExtractionGapDto,
   type SourceExtractionDto,
 } from "./sources";
-export { getSourceStore, LocalSourceStore, setSourceStore, sha256Hex, type SourceStore } from "./store";
+export {
+  assertSourceStoreConfig,
+  createSourceStoreFromEnv,
+  getSourceStore,
+  LocalSourceStore,
+  objectStoreKind,
+  parseSourceKey,
+  setSourceStore,
+  sha256Hex,
+  type ObjectStoreKind,
+  type SourceStore,
+} from "./store";
+export { normalizePrefix, s3ConfigFromEnv, S3SourceStore, type S3SourceStoreConfig } from "./s3-store";
 export {
   composeDraftFromSource,
   ComposeDraftFromSourceInput,

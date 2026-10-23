@@ -16,7 +16,12 @@
     "db:migrate": "tsx packages/database/src/cli/migrate.ts",
     "db:seed": "tsx packages/database/src/cli/seed.ts",
     "db:reset": "tsx packages/database/src/cli/reset.ts",
+    "db:backup": "tsx packages/database/src/cli/backup.ts",
+    "db:restore": "tsx packages/database/src/cli/restore.ts",
+    "retention:sweep": "tsx packages/domain/src/cli/retention-sweep.ts",
+    "perf": "tsx packages/domain/src/cli/perf.ts",
     "typecheck": "node scripts/typecheck.mjs",
+    "ai:eval": "tsx scripts/ai-eval.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test"
@@ -25,6 +30,7 @@
     "@playwright/test": "^1.64.1",
     "@types/node": "^26.6.5",
     "drizzle-kit": "^0.31.11",
+    "esbuild": "^0.28.2",
     "tsx": "^4.23.15",
     "typescript": "^6.0.3",
     "vitest": "^5.0.5"

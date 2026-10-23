@@ -11,7 +11,40 @@ async function bombDocx(): Promise<Uint8Array> {
   return zip.generateAsync({ type: "uint8array", compression: "DEFLATE", compressionOptions: { level: 9 } });
 }
 
+/** Rewrite the declared uncompressed size of `name` in its local and central headers. */
+function declareSize(bytes: Uint8Array, name: string, size: number): Uint8Array {
+  const out = bytes.slice();
+  const v = new DataView(out.buffer);
+  const nameAt = (at: number, lenAt: number) => new TextDecoder().decode(out.subarray(at, at + v.getUint16(lenAt, true)));
+  for (let i = 0; i + 46 <= out.length; i++) {
+    const sig = v.getUint32(i, true);
+    if (sig === 0x04034b50 && nameAt(i + 30, i + 26) === name) v.setUint32(i + 22, size, true);
+    if (sig === 0x02014b50 && nameAt(i + 46, i + 28) === name) v.setUint32(i + 24, size, true);
+  }
+  return out;
+}
+
+/** A DOCX whose body inflates to ~24 MiB while its headers declare 100 kB (a lying-size zip bomb). */
+async function lyingDocx(): Promise<Uint8Array> {
+  const zip = new JSZip();
+  zip.file("[Content_Types].xml", "<Types/>");
+  const body = '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>hi</w:t></w:r></w:p></w:body></w:document>';
+  zip.file("word/document.xml", body + " ".repeat(24 * 1024 * 1024));
+  const bytes = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE", compressionOptions: { level: 9 } });
+  return declareSize(bytes, "word/document.xml", 100_000);
+}
+
 describe("zip safety", () => {
+  it("refuses an archive whose entries inflate beyond their declared sizes, before any parser runs", async () => {
+    const bytes = await lyingDocx();
+    // The declared sizes pass the header checks...
+    expect("entries" in checkZipSafety(bytes, resolveLimits())).toBe(true);
+    // ...but extraction verifies the real inflated sizes against them.
+    const r = await extractSource({ kind: "docx", bytes });
+    expect(r.status).toBe("failed");
+    expect(r.errorCategory).toBe("unsafe_archive");
+  });
+
   it("rejects archives with a suspicious compression ratio before inflating", async () => {
     const bytes = await bombDocx();
     const safety = checkZipSafety(bytes, resolveLimits());
@@ -85,7 +118,10 @@ describe("detectKind", () => {
     expect(detectKind("notes.md")).toBe("markdown");
     expect(detectKind(undefined, "text/plain; charset=utf-8")).toBe("text");
     expect(detectKind("deck.PPTX")).toBe("pptx");
-    expect(detectKind("image.png")).toBeNull();
+    expect(detectKind("image.png")).toBe("image");
+    expect(detectKind("scan.JPG")).toBe("image");
+    expect(detectKind(undefined, "image/webp")).toBe("image");
+    expect(detectKind("sheet.xlsx")).toBeNull();
   });
 
   it("treats UTF-8 bytes as text unless named Markdown", () => {

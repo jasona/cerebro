@@ -27,8 +27,10 @@ import {
 import type { Database } from "@cerebro/database";
 import {
   createBriefingInTx,
+  createLogger,
   createPreview,
   DomainError,
+  enforceRateLimit,
   getAuthorFeedback,
   getAuthoringContext,
   getBriefingMeta,
@@ -47,11 +49,17 @@ import {
   type DraftPatchOp,
   type RequestContext,
 } from "@cerebro/domain";
+import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
-import { describeAudience, evidenceLines, previewText } from "./format";
+import { gateUiMetadataOnCapabilities, MCP_APPS_SERVER_CAPABILITY, previewUiToolMeta, registerPreviewUi } from "./apps";
+import { describeAudience, evidenceLines, previewFields, previewText } from "./format";
 import { guardDocumentEvidence, mergeHandoffIntoDraft } from "./merge";
 import { fail, ok, toToolError } from "./results";
+import { TOOL_SCOPES, type McpScope, type McpToolName } from "./scopes";
+
+const logger = createLogger({ component: "mcp" });
 
 export interface CerebroMcpServerOptions {
   db: Database;
@@ -59,6 +67,8 @@ export interface CerebroMcpServerOptions {
   ctx: RequestContext;
   /** Canonical base URL of the Cerebro web app, without a trailing slash. */
   appUrl: string;
+  /** Scopes granted to this connection (`./scopes`); each tool requires one. */
+  scopes: ReadonlySet<McpScope>;
 }
 
 export const SERVER_INSTRUCTIONS = [
@@ -121,9 +131,14 @@ function splitIssues(issues: DocumentIssue[]) {
   };
 }
 
-export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOptions): McpServer {
+export function createCerebroMcpServer({ db, ctx, appUrl, scopes }: CerebroMcpServerOptions): McpServer {
   const base = appUrl.replace(/\/+$/, "");
-  const server = new McpServer({ name: "cerebro", version: "0.1.0" }, { instructions: SERVER_INSTRUCTIONS });
+  const server = new McpServer(
+    { name: "cerebro", version: "0.1.0" },
+    { instructions: SERVER_INSTRUCTIONS, capabilities: { extensions: MCP_APPS_SERVER_CAPABILITY } },
+  );
+  // MCP Apps inline preview (T14): the UI resource, linked from preview_brief and publish_brief.
+  registerPreviewUi(server);
 
   const urls = (canonicalPath: string) => ({
     canonical_url: `${base}${canonicalPath}`,
@@ -131,8 +146,14 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
     edit_url: `${base}${canonicalPath}/edit`,
   });
 
-  // Run a handler, mapping thrown errors to tool errors.
-  const run = async <T>(fn: () => Promise<T>) => {
+  // Run a tool handler: require the tool's scope (defense in depth; the HTTP
+  // layer already answered 403 insufficient_scope), then map thrown errors to
+  // tool errors. Resource permissions are still checked by the domain.
+  const run = async <T>(tool: McpToolName, fn: () => Promise<T>) => {
+    const scope = TOOL_SCOPES[tool];
+    if (!scopes.has(scope)) {
+      return fail("forbidden", `This connection is not authorized for ${scope}.`, { reason: "insufficient_scope", scope }, "Ask the user to reconnect Cerebro and grant this permission.");
+    }
     try {
       return await fn();
     } catch (e) {
@@ -140,8 +161,39 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
     }
   };
 
+  /*
+   * Every tool goes through this wrapper: per-user and per-connection rate
+   * limits (off unless configured) are enforced before the handler runs, and
+   * one structured log line records the tool name, outcome code and latency.
+   * Arguments and results are never logged.
+   */
+  const log = logger.child({ requestId: ctx.requestId, organizationId: ctx.organizationId, userId: ctx.userId, connectionId: ctx.connectionId ?? null });
+  const registerTool = ((name: string, config: unknown, handler: (...args: unknown[]) => Promise<CallToolResult>) =>
+    (server.registerTool.bind(server) as (n: string, c: unknown, h: (...args: unknown[]) => Promise<CallToolResult>) => unknown)(
+      name,
+      config,
+      async (...args: unknown[]) => {
+        const started = performance.now();
+        let result: CallToolResult;
+        try {
+          await enforceRateLimit(db, ctx, "mcp_tool");
+          result = await handler(...args);
+        } catch (e) {
+          result = toToolError(e);
+        }
+        const code = result.isError ? ((result.structuredContent as { error?: { code?: string } } | undefined)?.error?.code ?? "error") : "ok";
+        log[result.isError && code === "unavailable" ? "error" : "info"]("mcp.tool_call", {
+          tool: name,
+          outcome: result.isError ? "error" : "ok",
+          code,
+          latencyMs: Math.round(performance.now() - started),
+        });
+        return result;
+      },
+    )) as unknown as typeof server.registerTool;
+
   // -------------------------------------------------------------------------
-  server.registerTool(
+  registerTool(
     "get_authoring_context",
     {
       title: "Get Cerebro authoring context",
@@ -151,7 +203,7 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     () =>
-      run(async () => {
+      run("get_authoring_context", async () => {
         const ac = await getAuthoringContext(db, ctx);
         const all = [ac.destinations.company, ...ac.destinations.departments, ...ac.destinations.teams];
         const text = [
@@ -183,7 +235,7 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
   );
 
   // -------------------------------------------------------------------------
-  server.registerTool(
+  registerTool(
     "create_brief_draft",
     {
       title: "Create a private Cerebro brief draft",
@@ -196,7 +248,7 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
     ({ handoff, idempotency_key }) =>
-      run(async () => {
+      run("create_brief_draft", async () => {
         const parsed = parseHandoff(handoff);
         if (!parsed.ok) return fail("validation", "The handoff package is invalid.", { issues: parsed.issues });
         const h = parsed.handoff;
@@ -307,7 +359,7 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
   }
 
   // -------------------------------------------------------------------------
-  server.registerTool(
+  registerTool(
     "get_operation",
     {
       title: "Get a Cerebro operation",
@@ -316,7 +368,7 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     ({ operation_id }) =>
-      run(async () => {
+      run("get_operation", async () => {
         const o = await getOperation(db, ctx, operation_id);
         return ok(`Operation ${o.id} (${o.action}): ${o.status}.`, {
           operation_id: o.id,
@@ -332,7 +384,7 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
   );
 
   // -------------------------------------------------------------------------
-  server.registerTool(
+  registerTool(
     "find_briefs",
     {
       title: "Find Cerebro briefs",
@@ -346,7 +398,7 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     ({ query, limit, include_drafts }) =>
-      run(async () => {
+      run("find_briefs", async () => {
         const res = await searchBriefings(db, ctx, { q: query, limit: limit ?? 20 });
         const q = query.toLowerCase();
         const drafts = include_drafts === false ? [] : (await listMyDrafts(db, ctx)).filter((d) => d.title.toLowerCase().includes(q));
@@ -385,7 +437,7 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
   }
 
   // -------------------------------------------------------------------------
-  server.registerTool(
+  registerTool(
     "get_brief",
     {
       title: "Get a Cerebro brief",
@@ -399,7 +451,7 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     ({ briefing_id, view, revision_number }) =>
-      run(async () => {
+      run("get_brief", async () => {
         const meta = await getBriefingMeta(db, ctx, briefing_id);
         const common = {
           briefing_id,
@@ -442,7 +494,7 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
   );
 
   // -------------------------------------------------------------------------
-  server.registerTool(
+  registerTool(
     "update_brief_draft",
     {
       title: "Update a Cerebro brief draft",
@@ -466,7 +518,7 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
     (args) =>
-      run(async () => {
+      run("update_brief_draft", async () => {
         const { briefing_id, expected_version, document, handoff, evidence_decisions, idempotency_key } = args;
         if (document && handoff) return fail("validation", "Provide either document or handoff, not both.");
         if (!document && !handoff && !evidence_decisions?.length) {
@@ -544,8 +596,16 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
       }),
   );
 
+  // registerAppTool registers through `server.registerTool`; hand it a view of
+  // the server whose registerTool is the wrapper above, so app tools get the
+  // same rate limits and logging as every other tool.
+  const appServer = new Proxy(server, {
+    get: (target, prop, receiver) => (prop === "registerTool" ? registerTool : Reflect.get(target, prop, receiver)),
+  });
+
   // -------------------------------------------------------------------------
-  server.registerTool(
+  const previewTool = registerAppTool(
+    appServer,
     "preview_brief",
     {
       title: "Preview a Cerebro brief before publishing",
@@ -556,9 +616,10 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
         expected_version: z.number().int().min(1).optional().describe("Fail with a conflict if the draft is no longer at this version."),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+      _meta: previewUiToolMeta(),
     },
     ({ briefing_id, expected_version }) =>
-      run(async () => {
+      run("preview_brief", async () => {
         const p = await createPreview(db, ctx, { briefingId: briefing_id, ...(expected_version ? { expectedVersion: expected_version } : {}) });
         const meta = await getBriefingMeta(db, ctx, briefing_id);
         const u = urls(meta.canonicalPath);
@@ -569,6 +630,7 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
           briefing_id: p.briefingId,
           draft_version: p.draftVersion,
           title: p.document.title,
+          ...previewFields(p.document),
           home: p.home,
           audience: p.audience,
           audience_statement: describeAudience(p.audience),
@@ -590,7 +652,8 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
   );
 
   // -------------------------------------------------------------------------
-  server.registerTool(
+  const publishTool = registerAppTool(
+    appServer,
     "publish_brief",
     {
       title: "Publish a reviewed Cerebro brief",
@@ -606,9 +669,13 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
         idempotency_key: IdempotencyKey,
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+      // Renders the published confirmation inline. Visible to the model and to the preview
+      // UI (default visibility): the UI's Publish control calls this same tool, so the
+      // preview binding is enforced identically for both callers.
+      _meta: previewUiToolMeta(),
     },
     ({ briefing_id, preview_id, change_summary, idempotency_key }) =>
-      run(async () => {
+      run("publish_brief", async () => {
         const op = await runIdempotent(
           db,
           ctx,
@@ -667,7 +734,7 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
   );
 
   // -------------------------------------------------------------------------
-  server.registerTool(
+  registerTool(
     "get_author_feedback",
     {
       title: "Get reader feedback for your brief",
@@ -677,7 +744,7 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
       annotations: { readOnlyHint: true, openWorldHint: false },
     },
     ({ briefing_id }) =>
-      run(async () => {
+      run("get_author_feedback", async () => {
         const f = await getAuthorFeedback(db, ctx, { briefingId: briefing_id });
         const text = [
           `${f.feedback.length} submitted feedback item(s); ${f.topics.length} aggregate topic(s).`,
@@ -689,11 +756,14 @@ export function createCerebroMcpServer({ db, ctx, appUrl }: CerebroMcpServerOpti
           briefing_id,
           feedback: f.feedback,
           topics: f.topics,
+          // Null below the cohort threshold (D07): the count itself is suppressed.
           suppressed_question_count: f.suppressedQuestionCount,
+          suppressed_question_count_suppressed: f.suppressedQuestionCountSuppressed,
           disclosure: f.disclosure,
         });
       }),
   );
 
+  gateUiMetadataOnCapabilities(server, [previewTool, publishTool]);
   return server;
 }

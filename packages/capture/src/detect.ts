@@ -1,4 +1,5 @@
 import type { SourceKind } from "./types";
+import { isImage } from "./image";
 import { isZip, readZipDirectory } from "./zip";
 
 const OLE_MAGIC = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
@@ -53,12 +54,14 @@ function kindFromHints(filename?: string, mime?: string): SourceKind | null {
   if (ext === "pptx" || type === "application/vnd.openxmlformats-officedocument.presentationml.presentation") return "pptx";
   if (ext === "md" || ext === "markdown" || type === "text/markdown" || type === "text/x-markdown") return "markdown";
   if (ext === "txt" || ext === "text" || type === "text/plain") return "text";
+  if (["png", "jpg", "jpeg", "webp"].includes(ext) || ["image/png", "image/jpeg", "image/webp"].includes(type)) return "image";
   return null;
 }
 
 /**
  * Detect the source kind. Magic bytes win over filename and MIME type: `%PDF`,
- * or a ZIP whose directory contains `word/document.xml` (DOCX) or `ppt/` parts (PPTX).
+ * a PNG/JPEG/WebP signature (image, read by OCR), or a ZIP whose directory contains
+ * `word/document.xml` (DOCX) or `ppt/` parts (PPTX).
  * Text is recognised only when the bytes are valid UTF-8 without NULs.
  * Returns null for unsupported or unrecognisable content (including legacy
  * .doc/.ppt and other ZIP formats such as XLSX). Never returns "conversation":
@@ -69,12 +72,13 @@ export function detectKind(filename?: string, mime?: string, bytes?: Uint8Array)
   if (!bytes) return hinted;
   if (bytes.length === 0) return hinted === "text" || hinted === "markdown" ? hinted : null;
   if (isPdf(bytes)) return "pdf";
+  if (isImage(bytes)) return "image";
   if (isZip(bytes)) return zipKind(bytes);
   if (isOleCompound(bytes)) return null;
   if (looksLikeText(bytes)) {
     if (hinted === "markdown") return "markdown";
     if (hinted === null || hinted === "text") return "text";
-    return null; // claimed PDF/DOCX/PPTX but the bytes are plain text
+    return null; // claimed PDF/DOCX/PPTX/image but the bytes are plain text
   }
   return null;
 }

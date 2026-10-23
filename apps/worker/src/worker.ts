@@ -1,16 +1,16 @@
 import { hostname } from "node:os";
 import type { Database } from "@cerebro/database";
-import { runJobsOnce, type JobOutcome } from "@cerebro/domain";
+import { createLogger, createRetentionScheduler, runJobsOnce, type JobOutcome } from "@cerebro/domain";
 
 export type LogLevel = "info" | "warn" | "error";
 /** Structured log fields: ids, kinds, counts and categories only — never payload or source text. */
 export type LogFields = Record<string, string | number | boolean | null>;
 export type Logger = (level: LogLevel, msg: string, fields?: LogFields) => void;
 
-export const jsonLogger: Logger = (level, msg, fields = {}) => {
-  const line = JSON.stringify({ ts: new Date().toISOString(), level, msg, ...fields });
-  (level === "error" ? process.stderr : process.stdout).write(`${line}\n`);
-};
+const domainLogger = createLogger({ component: "worker" });
+
+/** The shared structured logger (domain ops/log.ts): allowlisted fields only, JSON lines. */
+export const jsonLogger: Logger = (level, msg, fields = {}) => domainLogger[level](msg, fields);
 
 export const PGLITE_REFUSAL =
   "The worker requires DATABASE_URL (PostgreSQL). PGlite allows only one process per data directory, " +
@@ -50,6 +50,7 @@ const outcomeFields = (o: JobOutcome): LogFields => ({
   kind: o.kind,
   result: o.result,
   errorCategory: o.errorCategory ?? null,
+  durationMs: o.durationMs ?? null,
 });
 
 /**
@@ -61,8 +62,11 @@ export async function runWorkerLoop(db: Database, opts: WorkerLoopOptions): Prom
   const workerId = opts.workerId ?? defaultWorkerId();
   const intervalMs = opts.intervalMs ?? 1_000;
   log("info", "worker.started", { workerId, intervalMs });
+  // Retention sweeps: off unless RETENTION_SWEEP_INTERVAL_SECONDS is set.
+  const retention = createRetentionScheduler();
   while (!opts.signal.aborted) {
     let claimed = 0;
+    await retention.tick(db);
     try {
       const res = await runJobsOnce(db, { workerId, limit: opts.batchSize ?? 5 });
       claimed = res.claimed;

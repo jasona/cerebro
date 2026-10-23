@@ -1,12 +1,13 @@
 import { createHash } from "node:crypto";
-import { runTask, SummarizeTopicsTask, type AiRunRecord } from "@cerebro/ai";
-import { aiRuns, engagementInsights, withAuthContext, type Database, type Executor, type Job } from "@cerebro/database";
+import { runTask, SummarizeTopicsTask } from "@cerebro/ai";
+import { engagementInsights, withAuthContext, type Database, type Job } from "@cerebro/database";
 import { sql } from "drizzle-orm";
 import { z } from "zod";
 import { getBriefingCapabilities } from "../access/index";
 import { recordAudit } from "../audit";
-import { getAiRegistry, resolveOrgAiPolicy } from "../engagement/ai-runtime";
+import { getAiRuntimeOrNull, resolveOrgAiPolicy } from "../engagement/ai-runtime";
 import { ENGAGEMENT_SETTINGS, SUPPRESSED_TOPIC } from "../engagement/settings";
+import { checkAiUsage, recordAiRun } from "../ops/ai-usage";
 import { JobError, permanent, requireJobOrg, workerContext } from "./errors";
 
 const Payload = z.object({
@@ -15,28 +16,6 @@ const Payload = z.object({
   requestedBy: z.string().uuid(),
 });
 
-/** Persist an AI run record (ids, labels, counts and categories only). */
-export async function insertAiRun(tx: Executor, organizationId: string, actorId: string, record: AiRunRecord): Promise<string> {
-  const status = record.status === "failed" ? "failed" : record.outcome && record.outcome !== "answered" ? "abstained" : "succeeded";
-  const [row] = await tx
-    .insert(aiRuns)
-    .values({
-      organizationId,
-      actorId,
-      task: record.task,
-      provider: record.provider,
-      model: record.model,
-      promptVersion: record.promptVersion,
-      status,
-      latencyMs: record.latencyMs,
-      inputTokens: record.usage.inputTokens ?? null,
-      outputTokens: record.usage.outputTokens ?? null,
-      errorCategory: record.errorCategory,
-      completedAt: sql`now()`,
-    })
-    .returning({ id: aiRuns.id });
-  return row!.id;
-}
 
 /**
  * Aggregate a revision's private reader questions into topic insights.
@@ -71,8 +50,11 @@ export async function handleSummarizeTopics(db: Database, job: Job): Promise<voi
       order by m.created_at, m.id
       limit 5000`);
     const policy = await resolveOrgAiPolicy(tx, organizationId);
-    return { rows: res.rows, policy };
+    const usage = await checkAiUsage(tx, organizationId);
+    return { rows: res.rows, policy, usage };
   });
+  // Over the organization's AI usage limit: retry later, like an outage.
+  if (!prepared.usage.allowed) throw new JobError("ai_usage_limited", true);
 
   const questions = prepared.rows
     .filter((r) => r.content.trim().length > 0)
@@ -86,7 +68,9 @@ export async function handleSummarizeTopics(db: Database, job: Job): Promise<voi
 
   let provider;
   try {
-    provider = getAiRegistry().resolve("summarize_topics", prepared.policy);
+    const registry = (await getAiRuntimeOrNull())?.registry;
+    if (!registry) throw new JobError("ai_unavailable", true);
+    provider = registry.resolve("summarize_topics", prepared.policy);
   } catch {
     throw new JobError("ai_unavailable", true);
   }
@@ -98,7 +82,7 @@ export async function handleSummarizeTopics(db: Database, job: Job): Promise<voi
   );
 
   await withAuthContext(db, auth, async (tx) => {
-    await insertAiRun(tx, organizationId, requestedBy, res.record);
+    await recordAiRun(tx, organizationId, requestedBy, res.record);
     if (!res.ok) return;
     // Recheck before writing: access may have changed during the AI run.
     if (!(await getBriefingCapabilities(tx, ctx, briefingId)).has("view_engagement")) throw permanent("forbidden");
@@ -129,15 +113,18 @@ export async function handleSummarizeTopics(db: Database, job: Job): Promise<voi
         watermark,
       });
     }
-    // Every question not counted in a published topic is withheld.
-    const suppressed = questions.length - assigned.size;
+    // Every question not counted in a published topic is withheld. The row
+    // records how many distinct readers asked them, so that the withheld
+    // count can itself be cohort-suppressed when shown (D07, W3.6).
+    const withheld = questions.filter((q) => !assigned.has(q.id));
+    const suppressed = withheld.length;
     rows.push({
       organizationId,
       briefingId,
       revisionId,
       topic: SUPPRESSED_TOPIC,
       summary: null,
-      readerCount: 0,
+      readerCount: new Set(withheld.map((q) => q.readerHash)).size,
       questionCount: suppressed,
       supportingRefs: [],
       watermark,

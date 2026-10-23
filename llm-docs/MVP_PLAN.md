@@ -114,3 +114,23 @@ Delivered as a local, prototype-depth implementation. These are **not** pilot ex
 | 5 (partial) | Engagement summary with the cohort suppression set by D07; topic summaries; feedback resolution; unread indicators | Suppression and privacy tests; Playwright feedback loop | Backup restoration, latency and cost measurement, retention, and a full accessibility audit not done |
 
 Commands: `npm test`, `npm run typecheck`, `npm run test:e2e`.
+
+### Second implementation pass — 2026-10-23
+
+Built on branch `remaining-work` against `REMAINING_WORK.md`. Vendor-neutral throughout: no hosting vendor, AI provider, storage vendor or OAuth server is selected, and no limit, retention period or target is set. These are still **not** pilot exit gates.
+
+| Item | Delivered | Acceptance checks run | Remaining limitations |
+| --- | --- | --- | --- |
+| W1 | CI workflow; schema drift check; `E2E_PORT` | Drift test (it caught one real drift during merges); CI green on GitHub (all six jobs on `remaining-work`) | — |
+| W2.1 | `TEST_DATABASE_URL` test mode; pooled-connection leak regression test; owner privileges documented | Full Vitest suite and all Playwright journeys on PostgreSQL 17.6 with pgvector 0.8.1, with a separate worker processing jobs; `db:reset` then `db:migrate` is idempotent | Managed-host privileges unconfirmed; no PGlite-to-Postgres data move |
+| W2.2 | Clerk mode with `user_identities` links (migration 0006); MCP OAuth protected resource with scopes and revocable grants | `oauth.test.ts` (token, audience, issuer, expiry, algorithm, scope, revocation, membership), `identity.test.ts` (Clerk mocked), RLS tests for 0006 | No Clerk keys; no authorization server chosen; no host verification |
+| W2.3 | S3-compatible source store; organization-scoped get and delete | `s3-store.integration.test.ts` against MinIO built from source: roundtrip, immutable re-put, tamper detection, cross-tenant rejection, upload and extraction | Store vendor unselected |
+| W2.4, W3.2, W3.3 | Provider wiring by environment; local embeddings; hybrid retrieval (off by default); AI suggestions (migration 0007) | `ai-resilience.test.ts` (reading, editing and publishing unaffected by provider failure); `suggestions.test.ts` (including the usage limit); `npm run ai:eval` (deterministic: 15/15 answer cases; retrieval MRR 0.639 full-text vs 0.694 hybrid on 18 fixture queries, with word-level embeddings only); `e2e/14-suggested-perspectives.spec.ts` | No real provider; no thresholds; the retrieval default is undecided |
+| W3.1 | MCP Apps inline preview (spec 2026-01-26) | `mcp-apps.test.ts`; an AppBridge-hosted journey in `e2e/09-mcp.spec.ts` (stale preview refused, identifiers only, no network requests or CSP violations) | Not verified in a real host |
+| W3.4 | Tiptap v3 prose fields within the existing `RichText` syntax | Round-trip unit tests over every fixture field; `e2e/12-rich-text.spec.ts`; conflict journey unchanged | — |
+| W3.5 | Local OCR for scanned PDF pages and images | `ocr.test.ts` (recognised words, locators, limits as gaps, text-layer PDFs skip OCR); `e2e/13-ocr-upload.spec.ts`; `next build` | English only; limits provisional |
+| W3.6, W4 | Cohort-suppressed withheld-question counts and topic requests; rate limits; AI usage limits; `/api/health` and `/api/ready`; allowlisted logger; retention and source hard delete (migrations 0008, 0009); `db:backup` / `db:restore`; `npm run perf` | `cohort.test.ts` (2 vs 3 readers), `ops.test.ts`, `retention.test.ts`, `backup.test.ts` and `postgres.test.ts` (backup → change → restore on both databases), `e2e/15-ops.spec.ts` | All limits and retention periods unset; no admin UI for them |
+
+Security review of the production paths: 11 fixes, each with a regression test (D11), including a first-sign-in race that only the PostgreSQL test mode exposed.
+
+Totals on the merged branch after the security fixes: typecheck clean; Vitest 678 passed (8 skipped) on PGlite and 681 passed (5 skipped) on PostgreSQL 17.6, three consecutive PostgreSQL runs; Playwright 37 passed (3 skipped) on PGlite and on PostgreSQL with a separate worker (15 jobs succeeded, none failed). Skips are the S3 integration test without an endpoint, and PostgreSQL-only tests in the PGlite run. The accessibility audit was removed from scope by the user.

@@ -1,4 +1,5 @@
 import { isOleCompound, isPdf, looksLikeText, zipKind } from "./detect";
+import { isImage, readImageHeader } from "./image";
 import { resolveLimits, type CaptureLimits } from "./limits";
 import type { ErrorCategory, SourceKind } from "./types";
 import { checkZipSafety, isZip } from "./zip";
@@ -37,7 +38,8 @@ const TEXT_KINDS = new Set<SourceKind>(["text", "markdown", "conversation"]);
 const fail = (error: UploadError): UploadValidation => ({ ok: false, error });
 
 /**
- * Validate format, size, and (for DOCX/PPTX) archive safety before any parsing.
+ * Validate format, size, (for DOCX/PPTX) archive safety and (for images) declared
+ * pixel dimensions before any parsing or decoding.
  * Synchronous and inflates nothing. Content is checked by magic bytes; the filename
  * and declared kind are never trusted on their own.
  */
@@ -49,7 +51,7 @@ export function validateUpload(input: ValidateUploadInput, overrides?: Partial<C
     if (bytes === undefined && text === undefined) return fail({ code: "invalid_input", message: "No text or file was provided." });
     if (bytes !== undefined) {
       if (bytes.length > limits.maxBytes) return fail({ code: "too_large", message: "The file is larger than the upload limit.", limit: limits.maxBytes, actual: bytes.length });
-      if (bytes.length > 0 && (isPdf(bytes) || isZip(bytes) || isOleCompound(bytes) || !looksLikeText(bytes))) {
+      if (bytes.length > 0 && (isPdf(bytes) || isZip(bytes) || isImage(bytes) || isOleCompound(bytes) || !looksLikeText(bytes))) {
         return fail({ code: "kind_mismatch", message: `The file is not plain text and cannot be imported as ${kind}.` });
       }
       try {
@@ -74,15 +76,30 @@ export function validateUpload(input: ValidateUploadInput, overrides?: Partial<C
     return fail({ code: "legacy_or_encrypted_office", message: "This is a legacy (.doc/.ppt) or password-protected Office file. Save it as an unprotected .docx or .pptx and try again." });
   }
 
+  if (kind === "image") {
+    const header = readImageHeader(bytes);
+    if (!header) {
+      if (isPdf(bytes) || isZip(bytes) || looksLikeText(bytes)) return fail({ code: "kind_mismatch", message: "The file does not look like a PNG, JPEG or WebP image." });
+      return fail({ code: "unsupported_format", message: "The file is not a supported image. Use PNG, JPEG or WebP." });
+    }
+    if (header.width === null || header.height === null) return fail({ code: "corrupt_file", message: "The image header is damaged." });
+    // Decompression-bomb guard: refuse from the header, before any decoder allocates pixels.
+    const pixels = header.width * header.height;
+    if (pixels > limits.maxImagePixels || Math.max(header.width, header.height) > limits.maxImageDimension) {
+      return fail({ code: "too_large", message: `The image is ${header.width}×${header.height} pixels, larger than the ${Math.round(limits.maxImagePixels / 1_000_000)}-megapixel or ${limits.maxImageDimension.toLocaleString("en-US")}-pixel-side limit for OCR.`, limit: limits.maxImagePixels, actual: pixels });
+    }
+    return { ok: true, kind };
+  }
+
   if (kind === "pdf") {
     if (isPdf(bytes)) return { ok: true, kind };
-    if (isZip(bytes) || looksLikeText(bytes)) return fail({ code: "kind_mismatch", message: "The file does not look like a PDF." });
+    if (isZip(bytes) || isImage(bytes) || looksLikeText(bytes)) return fail({ code: "kind_mismatch", message: "The file does not look like a PDF." });
     return fail({ code: "unsupported_format", message: "The file is not a supported PDF." });
   }
 
   // docx / pptx
   if (!isZip(bytes)) {
-    if (isPdf(bytes) || looksLikeText(bytes)) return fail({ code: "kind_mismatch", message: `The file does not look like a ${kind.toUpperCase()} document.` });
+    if (isPdf(bytes) || isImage(bytes) || looksLikeText(bytes)) return fail({ code: "kind_mismatch", message: `The file does not look like a ${kind.toUpperCase()} document.` });
     return fail({ code: "unsupported_format", message: `The file is not a supported ${kind.toUpperCase()} document.` });
   }
   const safety = checkZipSafety(bytes, limits);

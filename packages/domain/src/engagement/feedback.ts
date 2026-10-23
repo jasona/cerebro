@@ -311,7 +311,9 @@ export interface AuthorFeedbackDto {
   feedback: FeedbackDto[];
   /** Generated topic summaries above the cohort threshold. Never raw questions. */
   topics: AuthorTopicDto[];
-  suppressedQuestionCount: number;
+  /** Questions withheld from topics; null (and `suppressedQuestionCountSuppressed`) below the cohort threshold. */
+  suppressedQuestionCount: number | null;
+  suppressedQuestionCountSuppressed: boolean;
   disclosure: string;
 }
 
@@ -333,6 +335,7 @@ export async function getAuthorFeedback(db: Database, ctx: RequestContext, raw: 
       feedback: items,
       topics: insights.topics.map((t) => ({ ...t, revisionNumber: t.revisionId ? (numbers.get(t.revisionId) ?? null) : null })),
       suppressedQuestionCount: insights.suppressedQuestionCount,
+      suppressedQuestionCountSuppressed: insights.suppressedQuestionCountSuppressed,
       disclosure: ENGAGEMENT_DISCLOSURE,
     };
   });

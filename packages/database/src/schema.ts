@@ -272,12 +272,24 @@ export const integrationConnections = pgTable(
     tokenPrefix: text("token_prefix"),
     lastUsedAt: ts("last_used_at"),
     revokedAt: ts("revoked_at"),
+    /** OAuth connections: the authorization server issuer (migration 0006). */
+    issuer: text("issuer"),
+    /** OAuth connections: tokens authenticated at or before this instant are refused (0006). */
+    notBefore: ts("not_before"),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
   (t) => [
     unique("integration_connections_org_id_key").on(t.organizationId, t.id),
     index("integration_connections_user_idx").on(t.organizationId, t.userId),
+    uniqueIndex("integration_connections_oauth_active_key")
+      .on(t.organizationId, t.userId, t.issuer, t.clientId)
+      .where(sql`kind = 'oauth' and status = 'active'`),
+    index("integration_connections_oauth_lookup_idx").on(t.userId, t.issuer, t.clientId).where(sql`kind = 'oauth'`),
+    check(
+      "integration_connections_oauth_check",
+      sql`(${t.kind} = 'oauth' and ${t.issuer} is not null and ${t.tokenHash} is null) or (${t.kind} = 'dev_token' and ${t.issuer} is null and ${t.tokenHash} is not null)`,
+    ),
     foreignKey({
       name: "integration_connections_membership_fk",
       columns: [t.organizationId, t.userId],
@@ -648,11 +660,13 @@ export const revisionEvidence = pgTable(
       columns: [t.organizationId, t.revisionId],
       foreignColumns: [briefingRevisions.organizationId, briefingRevisions.id],
     }),
+    // Migration 0009: `on delete set null (source_id)` — deleting a private
+    // source severs provenance but keeps the published excerpt.
     foreignKey({
       name: "revision_evidence_source_fk",
       columns: [t.organizationId, t.sourceId],
       foreignColumns: [sources.organizationId, sources.id],
-    }),
+    }).onDelete("set null"),
     check("revision_evidence_origin_check", oneOf(t.origin, EVIDENCE_ORIGINS)),
   ],
 );
@@ -853,6 +867,8 @@ export const aiRuns = pgTable(
   },
   (t) => [
     unique("ai_runs_org_id_key").on(t.organizationId, t.id),
+    // Migration 0008: usage windows per organization.
+    index("ai_runs_org_created_idx").on(t.organizationId, t.createdAt),
     check("ai_runs_status_check", oneOf(t.status, AI_RUN_STATUSES)),
   ],
 );
@@ -1181,6 +1197,133 @@ export const briefingReads = pgTable(
   ],
 );
 
+/**
+ * Explicit identity links (migration 0006): a verified external identity
+ * (issuer + subject, from Clerk or the MCP OAuth authorization server) to a
+ * Cerebro user. Not a tenant table; RLS exposes only the caller's own links.
+ */
+export const userIdentities = pgTable(
+  "user_identities",
+  {
+    id: pk(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    issuer: text("issuer").notNull(),
+    subject: text("subject").notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    unique("user_identities_issuer_subject_key").on(t.issuer, t.subject),
+    unique("user_identities_user_issuer_key").on(t.userId, t.issuer),
+    check("user_identities_nonempty_check", sql`length(${t.issuer}) > 0 and length(${t.subject}) > 0`),
+  ],
+);
+
+export const SUGGESTION_KINDS = ["perspective", "revision"] as const;
+export const SUGGESTION_STATUSES = ["pending", "accepted", "dismissed"] as const;
+export type SuggestionKind = (typeof SUGGESTION_KINDS)[number];
+export type SuggestionStatus = (typeof SUGGESTION_STATUSES)[number];
+
+/**
+ * AI-assisted composition proposals (migration 0007): suggested perspectives
+ * and revision proposals for a draft. Proposals only; acceptance writes the
+ * draft through the normal lock_version check. A decided row is final.
+ */
+export const briefingSuggestions = pgTable(
+  "briefing_suggestions",
+  {
+    id: pk(),
+    organizationId: orgId(),
+    briefingId: uuid("briefing_id").notNull(),
+    kind: text("kind").$type<SuggestionKind>().notNull(),
+    status: text("status").$type<SuggestionStatus>().notNull().default("pending"),
+    baseVersion: integer("base_version").notNull(),
+    payload: jsonb("payload").notNull(),
+    provider: text("provider").notNull(),
+    model: text("model").notNull(),
+    aiRunId: uuid("ai_run_id"),
+    createdBy: uuid("created_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+    decidedBy: userRef("decided_by"),
+    decidedAt: ts("decided_at"),
+    appliedVersion: integer("applied_version"),
+  },
+  (t) => [
+    unique("briefing_suggestions_org_id_key").on(t.organizationId, t.id),
+    index("briefing_suggestions_briefing_idx").on(t.organizationId, t.briefingId, t.status),
+    check("briefing_suggestions_kind_check", oneOf(t.kind, SUGGESTION_KINDS)),
+    check("briefing_suggestions_status_check", oneOf(t.status, SUGGESTION_STATUSES)),
+    check("briefing_suggestions_base_version_check", sql`${t.baseVersion} >= 1`),
+    check("briefing_suggestions_decision_check", sql`(${t.status} = 'pending') = (${t.decidedAt} is null)`),
+    foreignKey({
+      name: "briefing_suggestions_briefing_fk",
+      columns: [t.organizationId, t.briefingId],
+      foreignColumns: [briefings.organizationId, briefings.id],
+    }),
+    foreignKey({
+      name: "briefing_suggestions_ai_run_fk",
+      columns: [t.organizationId, t.aiRunId],
+      foreignColumns: [aiRuns.organizationId, aiRuns.id],
+    }),
+  ],
+);
+
+/**
+ * Fixed-window rate-limit counters (migration 0008). Private to their user
+ * under RLS; limits are configuration, off unless set.
+ */
+export const rateLimitCounters = pgTable(
+  "rate_limit_counters",
+  {
+    id: pk(),
+    organizationId: orgId(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id),
+    bucket: text("bucket").notNull(),
+    windowStart: ts("window_start").notNull(),
+    count: integer("count").notNull().default(0),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique("rate_limit_counters_org_id_key").on(t.organizationId, t.id),
+    unique("rate_limit_counters_window_key").on(t.organizationId, t.userId, t.bucket, t.windowStart),
+    check("rate_limit_counters_count_check", sql`${t.count} >= 0`),
+    check("rate_limit_counters_bucket_check", sql`${t.bucket} ~ '^[a-z_]{1,32}:(user|connection:[0-9a-f-]{36})$'`),
+  ],
+);
+
+export const RETENTION_CATEGORIES = ["sources", "conversations", "events"] as const;
+export type RetentionCategory = (typeof RETENTION_CATEGORIES)[number];
+
+/**
+ * Per-organization retention policy (migration 0009). No row, or a null
+ * `retainDays`, keeps the category indefinitely. P11 has not set any period.
+ */
+export const retentionPolicies = pgTable(
+  "retention_policies",
+  {
+    id: pk(),
+    organizationId: orgId(),
+    category: text("category").notNull(),
+    retainDays: integer("retain_days"),
+    updatedBy: uuid("updated_by")
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    unique("retention_policies_org_id_key").on(t.organizationId, t.id),
+    unique("retention_policies_category_key").on(t.organizationId, t.category),
+    check("retention_policies_category_check", oneOf(t.category, RETENTION_CATEGORIES)),
+    check("retention_policies_days_check", sql`${t.retainDays} is null or ${t.retainDays} >= 1`),
+  ],
+);
+
 /** Tables carrying `organization_id` that are subject to tenant RLS. */
 export const TENANT_TABLES = [
   "memberships",
@@ -1214,4 +1357,7 @@ export const TENANT_TABLES = [
   "jobs",
   "retrieval_chunks",
   "briefing_reads",
+  "briefing_suggestions",
+  "rate_limit_counters",
+  "retention_policies",
 ] as const;

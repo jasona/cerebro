@@ -118,14 +118,28 @@ export interface TopicInsightDto {
 
 export interface InsightsView {
   topics: TopicInsightDto[];
-  /** Questions in topics withheld for small cohorts, summed over revisions. */
-  suppressedQuestionCount: number;
+  /**
+   * Questions withheld from topics (small cohorts), summed over the revisions
+   * whose withheld questions themselves come from at least `minCohort`
+   * distinct readers (D07, W3.6). Null when no revision qualifies: a bare
+   * count of one or two readers' questions would disclose their private
+   * activity, so "nothing withheld" and "a small cohort withheld" look the same.
+   */
+  suppressedQuestionCount: number | null;
+  /** True when `suppressedQuestionCount` is null. */
+  suppressedQuestionCountSuppressed: boolean;
 }
 
 /**
  * Latest topic-summary batch per revision for a briefing. Rows below the
  * cohort threshold are dropped again here. Supporting references (question
  * ids) stay in the database and are never returned to authors.
+ *
+ * The withheld-question count is itself cohort-suppressed: per revision, the
+ * reserved `__suppressed__` row carries the number of distinct readers behind
+ * the withheld questions, and a revision contributes to the total only when
+ * that (lower-bound) reader count meets the threshold. Rows written before
+ * readers were recorded there have reader_count 0 and never contribute.
  */
 export async function loadLatestInsights(tx: Executor, organizationId: string, briefingId: string): Promise<InsightsView> {
   const rows = await tx
@@ -149,15 +163,17 @@ export async function loadLatestInsights(tx: Executor, organizationId: string, b
       ),
     )
     .orderBy(sql`${engagementInsights.questionCount} desc`, engagementInsights.topic);
-  let suppressedQuestionCount = 0;
+  const min = ENGAGEMENT_SETTINGS.minCohort;
+  // Per revision: withheld questions and a lower bound on their distinct readers.
+  const withheld = new Map<string | null, { questions: number; readers: number }>();
   const topics: TopicInsightDto[] = [];
   for (const r of rows) {
-    if (r.topic === SUPPRESSED_TOPIC) {
-      suppressedQuestionCount += r.questionCount;
-      continue;
-    }
-    if (r.readerCount < ENGAGEMENT_SETTINGS.minCohort) {
-      suppressedQuestionCount += r.questionCount;
+    if (r.topic === SUPPRESSED_TOPIC || r.readerCount < min) {
+      const w = withheld.get(r.revisionId) ?? { questions: 0, readers: 0 };
+      w.questions += r.questionCount;
+      // Readers of different rows may overlap, so only the largest single count is a safe lower bound.
+      w.readers = Math.max(w.readers, r.readerCount);
+      withheld.set(r.revisionId, w);
       continue;
     }
     topics.push({
@@ -169,5 +185,9 @@ export async function loadLatestInsights(tx: Executor, organizationId: string, b
       label: "generated_topic_summary",
     });
   }
-  return { topics, suppressedQuestionCount };
+  let disclosed: number | null = null;
+  for (const w of withheld.values()) {
+    if (w.questions > 0 && w.readers >= min) disclosed = (disclosed ?? 0) + w.questions;
+  }
+  return { topics, suppressedQuestionCount: disclosed, suppressedQuestionCountSuppressed: disclosed === null };
 }

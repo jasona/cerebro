@@ -4,6 +4,7 @@ import {
   AnswerInput,
   ComposeInput,
   ProposeRevisionInput,
+  SuggestPerspectivesInput,
   SummarizeTopicsInput,
   type AiTask,
   type AiTaskName,
@@ -12,12 +13,14 @@ import {
 } from "../tasks";
 import { extractiveAnswer, type ExtractiveAnswerOptions } from "./answer";
 import { composeDeterministic } from "./compose";
+import { suggestPerspectivesDeterministic } from "./perspectives";
 import { proposeRevisionDeterministic } from "./revise";
 import { summarizeTopicsDeterministic } from "./topics";
 
 export { extractiveAnswer, type ExtractiveAnswerOptions } from "./answer";
 export { composeDeterministic } from "./compose";
 export { proposeRevisionDeterministic, UNSUPPORTED_INSTRUCTION } from "./revise";
+export { suggestPerspectivesDeterministic } from "./perspectives";
 export { summarizeTopicsDeterministic } from "./topics";
 
 export interface DeterministicProviderOptions {
@@ -72,6 +75,8 @@ export class DeterministicProvider implements AiProvider {
         return proposeRevisionDeterministic(parse(ProposeRevisionInput) as ProposeRevisionInput);
       case "summarize_topics":
         return summarizeTopicsDeterministic(parse(SummarizeTopicsInput) as SummarizeTopicsInput);
+      case "suggest_perspectives":
+        return suggestPerspectivesDeterministic(parse(SuggestPerspectivesInput) as SuggestPerspectivesInput);
     }
   }
 }

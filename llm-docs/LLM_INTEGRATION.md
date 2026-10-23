@@ -122,13 +122,29 @@ A normal web login alone does not establish a delegated MCP authorization flow. 
 
 Support revocation, expired-token recovery, company policy, and revalidation of membership. Connection metadata records client identity and the relevant grant or token reference. Do not build a custom production token issuer merely to avoid the compatibility review.
 
+### Implemented auth contract (resource-server side, W2.2)
+
+The authorization server is still unchosen (T13). Cerebro implements only the protected-resource side of the MCP authorization spec. Details are in `packages/integrations/README.md`.
+
+- **Metadata.** RFC 9728 metadata is served at `/.well-known/oauth-protected-resource/api/mcp`. It names the issuer configured in `CEREBRO_OAUTH_ISSUER`, which is unset by default; while it is unset there is no metadata and every JWT is refused. A 401 carries `WWW-Authenticate: Bearer resource_metadata="…", scope="…"`.
+- **Tokens.** Access tokens are JWTs verified against the issuer's JWKS with asymmetric algorithms only. The token's `iss` must equal the configured issuer. Its `aud` must contain the MCP resource URL (`APP_URL` + `/api/mcp`); tokens for other resources are refused and never passed through. The token also needs a valid `exp`, a `sub`, and a client (`client_id` or `azp`). Opaque tokens would need introspection, which is not implemented.
+- **Identity.** `sub` maps to a Cerebro user only through an explicit identity link (`user_identities`: issuer + subject). Unknown subjects are refused. Clerk web sign-in creates these links (issuer = the Clerk session issuer). If the chosen authorization server is Clerk, OAuth subjects therefore resolve automatically. If another server is chosen, it needs an account-linking step that does not exist yet.
+- **Grants.** Each grant is an `integration_connections` row with `kind = 'oauth'`, one per company, user, issuer and client. Grants are listed and revoked in Settings like connection tokens.
+  - A revoked grant refuses tokens until the user authorizes again: the token's `auth_time` must be later than the revocation. Tokens without `auth_time` stay refused.
+  - Membership is rechecked on every request.
+  - A grant binds to the user's only active company. Users with several companies get `company_selection_required` until a selection step exists.
+- **Scopes.** `cerebro:read` covers context, finding and reading briefs, operations and feedback. `cerebro:draft` covers creating and updating drafts and previewing. `cerebro:publish` covers `publish_brief`. A missing scope returns HTTP 403 `insufficient_scope` and is rechecked per tool. Scopes never replace resource permissions.
+- **Dev tokens.** Connection tokens (`cbr_`) carry all scopes. They stay refused in production unless `CEREBRO_ALLOW_DEV_CONNECTION_TOKENS=1`.
+
 ## Host experience and rollout
 
 ChatGPT is a proposed first integration target, not an approved distribution commitment. Validate account availability, workspace policy, OAuth behavior, write permissions, file transfer, and distribution requirements before promising access.
 
 The adapter uses `@modelcontextprotocol/sdk` over Streamable HTTP, served from a Next.js route at `/api/mcp` (T21).
 
-An optional embedded MCP Apps interface for preview, destination/audience display, and publishing is deferred (T14). Until then, every client receives the text-only fallback: a structured summary and an authenticated preview link to the first-party preview, where evidence toggles and publication are available. It does not receive a false claim that the entire visual workflow can run inline.
+Every client receives the text-only fallback: a structured summary and an authenticated preview link to the first-party preview, where evidence toggles and publication are available. It does not receive a false claim that the entire visual workflow can run inline.
+
+Hosts that support MCP Apps (extension `io.modelcontextprotocol/ui`, spec 2026-01-26) also get an inline preview (T14, W3.1). `preview_brief` and `publish_brief` link to the `ui://cerebro/brief-preview-v1.html` resource (`text/html;profile=mcp-app`). It is a self-contained document with no network access, and it renders the server-bound preview: title, position, request, home, audience in plain language, evidence counts and sections. Its Publish control asks for confirmation, then calls `publish_brief` through the host with only the server-issued `preview_id`. The preview binding stays the security boundary: a stale preview is refused exactly as it is for the model, and the view offers to preview again. Evidence decisions and audience changes still happen in Cerebro or through `update_brief_draft`. The stateless endpoint cannot see client capabilities when tools are listed, so it always advertises the UI metadata. The spec has hosts without the extension ignore that metadata, and the text result is unchanged. Details are in `packages/integrations/README.md`. The view has not yet been verified in a production host.
 
 Other MCP hosts require their own capability and permission tests. Do not infer universal compatibility from the protocol alone. Prefer capability detection to hard-coded assumptions about a host name.
 
@@ -158,3 +174,5 @@ Official OpenAI documentation reviewed on 2026-10-22 establishes the ChatGPT int
 - [MCP server tools](https://developers.openai.com/plugins/build/mcp-server).
 - [Embedded MCP Apps UI](https://developers.openai.com/plugins/build/chatgpt-ui).
 - [Authenticated MCP integrations](https://developers.openai.com/plugins/build/auth).
+
+The inline preview was built against the MCP Apps extension specification, stable version 2026-01-26 (SEP-1865), reviewed on 2026-10-23: [`ext-apps/specification/2026-01-26/apps.mdx`](https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx). It uses the `@modelcontextprotocol/ext-apps` 1.7.x server helpers.

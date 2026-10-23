@@ -8,13 +8,15 @@ import type { ActionState } from "@/lib/action-state";
 import { getRequestContext } from "@/lib/context";
 import { errorMessage, field } from "@/lib/errors";
 
-type UploadKind = "pdf" | "docx" | "pptx" | "markdown" | "text";
+type UploadKind = "pdf" | "docx" | "pptx" | "image" | "markdown" | "text";
 
 function uploadKind(file: File): UploadKind | null {
   const name = file.name.toLowerCase();
   if (name.endsWith(".pdf") || file.type === "application/pdf") return "pdf";
   if (name.endsWith(".docx")) return "docx";
   if (name.endsWith(".pptx")) return "pptx";
+  // Read by OCR in the background extraction job; the type is confirmed from magic bytes.
+  if (/\.(png|jpe?g|webp)$/.test(name) || ["image/png", "image/jpeg", "image/webp"].includes(file.type)) return "image";
   if (name.endsWith(".md") || name.endsWith(".markdown") || file.type === "text/markdown") return "markdown";
   if (name.endsWith(".txt") || file.type.startsWith("text/")) return "text";
   return null;
@@ -82,7 +84,7 @@ export async function createBriefAction(_: ActionState, fd: FormData): Promise<A
       const file = fd.get("file");
       if (!(file instanceof File) || file.size === 0) return { status: "error", code: "validation", message: "Choose a file to upload." };
       const kind = uploadKind(file);
-      if (!kind) return { status: "error", code: "validation", message: "Upload a PDF, Word (.docx), PowerPoint (.pptx), Markdown or text file." };
+      if (!kind) return { status: "error", code: "validation", message: "Upload a PDF, Word (.docx), PowerPoint (.pptx), Markdown, text or image (PNG, JPEG, WebP) file." };
       const bytes = new Uint8Array(await file.arrayBuffer());
       const docTitle = title || file.name.replace(/\.[^.]+$/, "").slice(0, 200) || undefined;
       // Text and Markdown compose synchronously (a # heading names the brief unless a title was given);
@@ -107,7 +109,8 @@ export async function createBriefAction(_: ActionState, fd: FormData): Promise<A
       } catch (err) {
         // The draft exists; say the file was not attached rather than losing the draft.
         if (!isDomainError(err)) throw err;
-        destination = briefingPaths.edit(ws.org.slug, created.slug, { upload: err.code === "validation" ? "rejected" : "failed" });
+        const upload = err.code === "validation" ? "rejected" : err.code === "rate_limited" ? "limited" : "failed";
+        destination = briefingPaths.edit(ws.org.slug, created.slug, { upload });
       }
     } else {
       return { status: "error", code: "validation", message: "Choose how to start." };
@@ -117,7 +120,7 @@ export async function createBriefAction(_: ActionState, fd: FormData): Promise<A
       return {
         status: "error",
         code: err.code,
-        message: err.code === "validation" ? `${err.message || errorMessage("validation")}${issuesMessage(err)}` : errorMessage(err.code),
+        message: err.code === "validation" ? `${err.message || errorMessage("validation")}${issuesMessage(err)}` : errorMessage(err.code, err.details),
       };
     }
     throw err;

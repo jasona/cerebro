@@ -32,7 +32,7 @@ Use the canonical briefing renderer and design tokens where host constraints per
 
 One explicit publication action should release the reviewed content and audience, subject to host policy. A stale draft or changed audience requires an updated preview; avoid redundant confirmations when nothing has changed. Missing evidence must remain visible rather than being hidden by a polished layout.
 
-Preview lists each evidence candidate with its attribution and an approve/exclude toggle in the first-party preview. Only approved excerpts publish. Embedded MCP Apps UI is deferred (T14); until then the connected host shows a structured summary and links to the first-party preview.
+Preview lists each evidence candidate with its attribution and an approve/exclude toggle in the first-party preview. Only approved excerpts publish. Hosts that support MCP Apps show an inline preview with a confirmed Publish control bound to the server-issued preview (T14); other hosts show a structured summary and link to the first-party preview. Evidence toggles stay in the first-party preview.
 
 ### Library
 
@@ -46,7 +46,7 @@ Avoid making generic metric cards the initial product experience. Information sh
 
 The desktop studio has an outline, a briefing canvas, and a contextual inspector. Selecting a block exposes its editing controls, evidence, and relevant AI actions.
 
-The studio is the deeper-editing surface and manual fallback. A sophisticated studio is not a prerequisite for the first LLM-to-publication milestone. The Phase 2 manual fallback uses structured block forms; Tiptap rich text arrives with the deeper studio (T22).
+The studio is the deeper-editing surface and manual fallback. A sophisticated studio is not a prerequisite for the first LLM-to-publication milestone. The manual editor uses structured block forms. Prose fields (position summary, stakes, background, request detail, perspective summaries, and the narrative, key finding detail and decision rationale blocks) use a Tiptap field limited to what the RichText syntax holds: paragraphs, line breaks, bold, italic and http(s) links. Each field has a labelled formatting toolbar (one tab stop, arrow keys between buttons, `aria-pressed` state) and the shortcuts Ctrl/⌘+B, I and K. Other text fields stay plain inputs (T22, W3.4).
 
 The canvas uses the same content components as the reader. The inspector offers actions with clear scope, such as refining the selected paragraph, identifying unsupported claims, or proposing an alternative structure.
 

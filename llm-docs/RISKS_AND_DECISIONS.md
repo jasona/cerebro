@@ -10,6 +10,9 @@ On 2026-10-22, the user specified Company → Department → Team and easy disco
 | --- | --- | --- | --- |
 | D01 | 2026-10-22 | Organize the shared workspace as Company → Department → Team and make colleagues' briefs easy to discover | Supports shared company communication; reflected in team workspaces, vision, goals, journeys, design, schema, security, and MVP plan |
 | D02 | 2026-10-22 | Make creating, reviewing, publishing, and updating briefs from an executive's existing LLM a core MVP workflow, ahead of advanced in-app composition | Removes manual content transfer and preserves existing thinking workflows; reflected in LLM integration, vision, goals, architecture, schema, journeys, design, AI/evidence, security, team workspaces, and MVP plan |
+| D12 | 2026-10-23 | **AI provider: Anthropic (Claude)**, through the AI SDK provider path (T27). Resolves the AI-provider part of T06/T19 | User decision. Model IDs, evaluation thresholds and the embedding source remain open: Anthropic has no embeddings API, so `CEREBRO_EMBEDDINGS` stays `none` or `local` until an embedding source is chosen. Affects AI_AND_EVIDENCE, IMPLEMENTATION_GUIDE, README |
+| D13 | 2026-10-23 | **MCP OAuth authorization server: Clerk**, the same vendor as web identity (D08). Resolves T13 | User decision. Verification still needed: resource-bound JWT access tokens with `auth_time`, and dynamic client registration for MCP hosts. Affects LLM_INTEGRATION, SECURITY_AND_PUBLICATION, integrations README |
+| D14 | 2026-10-23 | **Hosting: internally on Coolify** (self-hosted). Resolves the hosting part of T10 | User decision. The web app, worker, PostgreSQL with pgvector and S3-compatible storage all run as Coolify services. The storage service, backups schedule and region follow from the internal environment. Affects ARCHITECTURE, IMPLEMENTATION_GUIDE, README |
 
 D02 records the user's instruction to update the plan after reviewing the proposed integration experience. It does not imply approval of every technical detail, host, identity vendor, or outstanding privacy decision.
 
@@ -53,6 +56,25 @@ Adopted 2026-10-22 to unblock implementation; revisit at architecture review.
 
 The MCP adapter enforces connection revocation by authenticating every request; the domain does not recheck the connection inside `withAuthContext`.
 
+### D11 production-path security review follow-ups
+
+Adopted 2026-10-23 after a security review of the second-pass production paths (identity, OAuth, MCP, ops endpoints, storage, retention, backups, capture); revisit at architecture review. Each fix has a regression test.
+
+| Topic | Chosen behavior |
+| --- | --- |
+| Sign-in redirects | Post-sign-in `next` destinations must be same-origin paths with no control characters or backslashes |
+| Clerk session binding | Clerk session tokens are accepted only when their authorized party (`azp`) is the `APP_URL` origin |
+| MCP OAuth audience | The token audience comes only from `APP_URL`; OAuth stays off until `APP_URL` is set, in every environment |
+| OAuth discovery | Each authorization-server metadata request has a bounded timeout; a failed discovery is not cached |
+| Connections on membership removal | Removing a company membership revokes the user's MCP connections (dev tokens and OAuth grants) in that company, each audited. Re-adding the member does not revive them (extends D10) |
+| Concurrent first sign-in | A sign-in that races another first sign-in for the same identity resolves to the linked user, never `identity_conflict` |
+| Readiness token | Compared as fixed-length SHA-256 digests in constant time |
+| Backups | Postgres tools receive the password via `PGPASSWORD`, never argv; failures report only the tool, exit code and redacted stderr. Backup directories are 0700 and dumps 0600; restore accepts only the fixed file name for the backup's kind |
+| Shared stored objects | Deleting a content-addressed object is serialized with uploads of the same object by a per-object advisory lock, and references are rechecked just before deletion |
+| Archive inflation | DOCX/PPTX entries must inflate to exactly their declared size, capped at that size, before any parser runs; a mismatch is `unsafe_archive` |
+
+**Open for review:** whether editors of a linked briefing (not only the source's creator and owners/admins) may hard-delete a source; a per-page time limit for PDF parsing and rendering; object backup when the S3 store is selected; checking the access-token `typ`; the cross-company effect of revoking an OAuth grant; accepting tokens with no Cerebro scope; and a relink procedure if the Clerk instance (issuer) changes.
+
 ## Product decisions
 
 | ID | Decision | Proposed default | Status and review consequence |
@@ -95,8 +117,8 @@ P07–P09 and P11–P19 remain proposed defaults.
 | T10 | Docker and managed data services | Portable deployment; actual host, region, and providers remain unselected | Proposed |
 | T11 | Shared reader and preview renderer | Consistent output; editor controls must not leak into reader rendering | Proposed |
 | T12 | Remote MCP adapter over shared domain services | Portable tool interface with per-host capability testing; no separate permission/publication path | Proposed; transport set by T21 |
-| T13 | Established MCP-compatible OAuth authorization server | Verify delegated-flow support alongside web authentication | Production path per D08; Clerk OAuth/MCP is the first candidate, verification pending. Local development and tests use connection tokens |
-| T14 | Optional MCP Apps preview UI | Inline preview where supported, structured results and authenticated links elsewhere | Deferred by T21 |
+| T13 | Established MCP-compatible OAuth authorization server | Verify delegated-flow support alongside web authentication | Production path per D08. The resource-server side is implemented (T24); the authorization server itself is unselected, and Clerk OAuth/MCP remains the first candidate, verification pending. Local development and tests use connection tokens |
+| T14 | Optional MCP Apps preview UI | Inline preview where supported, structured results and authenticated links elsewhere | Implemented 2026-10-23 against the MCP Apps spec 2026-01-26 (amends T21's deferral); not yet verified in a real host |
 | T15 | Server-bound previews and integration operation records | Bind release to reviewed content/audience and recover safely from retries without treating a preview reference as human consent | Proposed |
 
 ### Implementation selections
@@ -112,7 +134,21 @@ Each entry below was adopted 2026-10-22 to unblock implementation, at the user's
 | T19 | AI task interfaces with a deterministic local provider as the default: extractive, retrieval-based answers and structure-preserving composition. An AI SDK adapter accepts an injected model; no vendor is selected (amends T06) | Reading, publishing, and tests never need a live model. Consistent with leaving AI providers unset until agreed |
 | T20 | Full-text search first. The vector column is optional and populated only when an embedding provider is configured (amends T08) | No embedding provider is selected; retrieval must work without one |
 | T21 | `@modelcontextprotocol/sdk` over Streamable HTTP, served from a Next.js route at `/api/mcp`. No MCP Apps embedded UI yet (T14 deferred). Text-only fallback returns a structured summary and an authenticated preview link (amends T12) | Uses the protocol's reference implementation inside the existing deployment; embedded UI waits for host validation |
-| T22 | Tiptap deferred. The minimal manual editor uses structured block forms (Phase 2 scope). Tiptap remains the plan for the deeper studio | Block forms are enough for minimal manual editing and keep the schema the source of truth |
+| T22 | Tiptap deferred. The minimal manual editor uses structured block forms (Phase 2 scope). Tiptap remains the plan for the deeper studio. **Amended 2026-10-23:** prose fields now use Tiptap v3, limited to the existing `RichText` syntax (paragraphs, line breaks, bold, italic, http(s) links); the stored format is unchanged | Block forms are enough for minimal manual editing and keep the schema the source of truth |
+
+#### Second implementation pass — 2026-10-23
+
+Adopted 2026-10-23 while working through `REMAINING_WORK.md`, at the user's direction to finish the remaining work items; revisit at architecture review. None of these selects a hosting vendor, AI provider, storage vendor or OAuth authorization server, and none sets a limit, retention period or target.
+
+| ID | Adopted selection | Reason |
+| --- | --- | --- |
+| T23 | Clerk web identity behind `AUTH_MODE=clerk` (D08). External identities map to users only through an explicit `user_identities` link (issuer + subject, migration 0006). First sign-in creates a user only for a pending invitation to the verified email, or claims an unlinked pre-provisioned user once; no domain auto-join. `AUTH_MODE=dev` is refused when `NODE_ENV=production` | Cerebro keeps authorization; Clerk only authenticates |
+| T24 | MCP is an OAuth 2.1 protected resource: RFC 9728 metadata, JWT access tokens verified against the configured issuer's JWKS with the audience bound to `APP_URL/api/mcp`, scopes `cerebro:read`, `cerebro:draft` and `cerebro:publish` enforced per tool, and grants stored as revocable `integration_connections` rows. Off until `CEREBRO_OAUTH_ISSUER` is set | Vendor-neutral; works with any compliant authorization server that issues resource-bound JWTs with `auth_time` |
+| T25 | S3-compatible source store using the AWS SDK v3 client, selected by `CEREBRO_OBJECT_STORE=s3`; endpoint, region and bucket are required, with no defaults. Immutable puts (`If-None-Match: *`), hash-verified reads, organization-scoped get and delete | Works with any S3-compatible service; the vendor stays unselected (T10) |
+| T26 | Local OCR with `tesseract.js` and bundled English language data, run only in the extraction job, for scanned PDF pages and PNG/JPEG/WebP uploads. Page, pixel and time limits are provisional implementation settings | No cloud OCR vendor; nothing is downloaded at runtime (P09 amended: OCR no longer deferred, layout and chart reconstruction still are) |
+| T27 | AI provider wiring by environment: deterministic by default, or `CEREBRO_AI_PROVIDER=ai-sdk` with a runtime-named AI SDK module and model. A local hashed embedding exists for development and tests; hybrid retrieval exists behind `CEREBRO_RETRIEVAL_MODE` but full-text stays the default (amends T19, T20) | Connecting a provider becomes configuration; the default retrieval mode waits for measurements with a real embedding model |
+| T28 | Operational mechanisms with no values set: Postgres-backed rate limits, per-organization AI usage limits, retention policies with deletion propagation, `/api/health` and `/api/ready`, an allowlisted structured logger, and `db:backup` / `db:restore`. Every limit is off and every retention category keeps data until configured | P11 and P12 are unset; the mechanisms can be tested before the values are agreed |
+| T29 | CI on GitHub Actions (the repository host): typecheck, Vitest on PGlite and on PostgreSQL with pgvector, the database CLI, and Playwright on both databases. Tests run against a server when `TEST_DATABASE_URL` is set | Covers the server database path, which had been untested |
 
 Hosting providers, AI models, embedding configuration, extraction libraries, and telemetry vendors remain unselected. Exact dependency versions are pinned in the implementation, and their current capabilities and constraints must be verified when selected.
 
@@ -128,6 +164,8 @@ Hosting providers, AI models, embedding configuration, extraction libraries, and
 | Generic page-builder drift | The product loses its communication focus | Small semantic block vocabulary, realistic briefing design reviews |
 | Stale answers after publication | Questions appear grounded in the wrong release | Revision-bound threads, citations, projections, and indexing states |
 | Publication or edit races | Lost work or inconsistent releases | Optimistic concurrency, transactional publication, idempotency tests |
+| Managed-Postgres privileges | Migrations or seeding fail on a host that withholds superuser rights | pgvector is not a trusted extension, so a superuser must create it first; the owner role needs `CREATEROLE` and `BYPASSRLS` (forced RLS). Verified on PostgreSQL 17.6 with a non-superuser owner; confirm on the chosen host |
+| Untested production integrations | Clerk sign-in, the OAuth authorization server, the S3 vendor, a real AI provider and real MCP hosts behave differently from local stand-ins | Vendor-neutral adapters with local tests (MinIO, a local JWKS, mocked Clerk, an AppBridge test host); repeat the same tests against each selected vendor before pilot |
 | Analytics overclaiming | Activity is mistaken for comprehension or agreement | Clear labels, explicit feedback, baseline-based outcome measures |
 | Reader surveillance | Private questions are exposed or inferred | Disclosure, transcript restrictions, cohort suppression (D07), retention controls |
 | Provider outage or cost growth | Unavailable features or unpredictable expense | Manual paths, deterministic local provider (T19), approved fallback, budgets, bounded context, observable usage |

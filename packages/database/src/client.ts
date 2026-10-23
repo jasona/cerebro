@@ -147,8 +147,9 @@ export async function withAuthContext<T>(db: Database, ctx: AuthContext, fn: (tx
  *
  * RESTRICTED: only migrations, seed, worker job claiming/completion, retrieval
  * projection writes by the indexer, and narrow identity lookups (resolving an
- * auth subject or connection-token hash to a user). Every use in domain code
- * must carry a comment justifying it.
+ * auth subject, identity link or connection-token hash to a user, and the
+ * invitation-gated first-sign-in provisioning of `users`/`user_identities`).
+ * Every use in domain code must carry a comment justifying it.
  */
 export async function withSystemContext<T>(db: Database, fn: (tx: Tx) => Promise<T>): Promise<T> {
   return db.transaction(async (tx) => fn(tx as Tx));

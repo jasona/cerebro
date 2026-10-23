@@ -14,12 +14,12 @@ Dependencies are pre-installed at the root. **Do not run `npm install`** — if 
 | `@cerebro/database` | Drizzle schema, SQL migrations (incl. RLS + roles), client factory (PGlite or node-postgres), `withAuthContext`, job queue table helpers, seed |
 | `@cerebro/domain` | All domain services and authorization. Every protected read/write goes through here |
 | `@cerebro/ai` | Task interfaces (compose, propose revision, answer, summarise topics), deterministic local provider, AI SDK adapter (injected model), retrieval, citation validation |
-| `@cerebro/capture` | Text/Markdown/PDF/DOCX/PPTX extraction to chunks with locators; Markdown → draft document |
+| `@cerebro/capture` | Text/Markdown/PDF/DOCX/PPTX extraction to chunks with locators; local OCR (tesseract.js, bundled English data) for scanned PDF pages and PNG/JPEG/WebP images, run only in the extraction job; Markdown → draft document |
 | `@cerebro/briefing-renderer` | React components rendering a published or preview document (shared by reader, preview, studio canvas) |
 | `@cerebro/ui` | Design tokens (CSS variables), Tailwind theme, small accessible primitives |
 | `@cerebro/integrations` | MCP server (tools from LLM_INTEGRATION.md) calling domain services; connection-token auth |
 | `apps/web` | Next.js App Router application: library, reader, studio, preview/publish, sharing, engagement, admin, settings, `/api/mcp` |
-| `apps/worker` | Job runner loop: indexing, extraction, topic summaries |
+| `apps/worker` | Job runner loop: indexing, extraction, topic summaries, retention sweeps (when enabled) |
 
 ## Runtime configuration
 
@@ -29,6 +29,23 @@ Dependencies are pre-installed at the root. **Do not run `npm install`** — if 
 | `AUTH_MODE` | `dev` (default locally) enables the dev identity adapter; `clerk` uses Clerk |
 | `SESSION_SECRET` | HMAC key for dev session cookies (dev default provided with a warning) |
 | `APP_URL` | Canonical base URL, default `http://localhost:3000` |
+| `CEREBRO_OCR` | `off` disables OCR in extraction jobs (scanned pages and images are then reported as gaps). Default on |
+| `CEREBRO_OCR_LANGUAGES` | Comma-separated Tesseract language codes. Default `eng`; only English data is bundled |
+| `CEREBRO_OCR_LANG_PATH` | Local directory of `<lang>.traineddata.gz` files for other languages (never a URL; nothing is downloaded at runtime) |
+| `E2E_PORT` | Port for the Playwright dev server, default 3400 |
+| `CEREBRO_OBJECT_STORE` | Source byte store: `local` (default, `.data/objects` or `CEREBRO_OBJECTS_DIR`) or `s3` (any S3-compatible service). Unknown values fail at startup |
+| `CEREBRO_S3_ENDPOINT`, `CEREBRO_S3_REGION`, `CEREBRO_S3_BUCKET` | Required with `s3`; no provider endpoint or region is assumed. Startup (web `instrumentation.ts`, worker `main.ts`) fails fast, naming missing variables |
+| `CEREBRO_S3_FORCE_PATH_STYLE`, `CEREBRO_S3_PREFIX`, `CEREBRO_S3_SSE`, `CEREBRO_S3_SSE_KMS_KEY_ID` | Optional: path-style addressing (`true`/`false`), a key prefix, server-side encryption (`AES256` or `aws:kms` with an optional key id) |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` | S3 credentials (standard variables; both key variables or neither). Unset → the SDK default credential chain |
+| `RATE_LIMIT_{MCP_TOOL,QA,UPLOAD}_PER_{USER,CONNECTION}` | `<max>/<windowSeconds>` or `off`. Off when unset; no limit has been agreed |
+| `AI_USAGE_LIMIT_RUNS`, `AI_USAGE_LIMIT_TOKENS` | Per-organization AI usage limits, `<max>/<windowSeconds>`; off when unset. `organizations.settings.ai.usageLimits` overrides per organization |
+| `RETENTION_SWEEP_INTERVAL_SECONDS` | Schedule `apply_retention` jobs; off when unset. Retention periods themselves are per-organization rows (none set) |
+| `READINESS_TOKEN` | Bearer token that unlocks full `/api/ready` details; unset → summary only |
+| `READY_MAX_QUEUED_AGE_SECONDS` | Optional readiness failure threshold for job queue age; off when unset |
+| `LOG_LEVEL` | Structured log level (`debug`, `info`, `warn`, `error`, `silent`); default `info` |
+| `PG_BIN_DIR`, `CEREBRO_BACKUP_DIR` | `pg_dump`/`pg_restore` location for `db:backup`/`db:restore` (else PATH); backup root (default `.data/backups`) |
+
+Operational modules live in `packages/domain/src/ops/` (structured logger with a redaction allowlist, limit configuration, Postgres-backed rate limiter, AI usage recording and limits, readiness, retention and source hard delete). Migrations `0008` (rate-limit counters, AI usage index) and `0009` (retention policies, source deletion with provenance severed from published evidence) add their own RLS. Invalid limit values leave the limit off and make `/api/ready` report `config` as failing.
 
 ## Data access contract
 
@@ -55,7 +72,7 @@ Domain modules (each directory exports from its own `index.ts`; `src/index.ts` r
 | `publication/` | Previews (digest binding, expiry), publish transaction, withdrawal, share links, stable/pinned resolution |
 | `integration/` | Connections + connection tokens, authoring preferences, destination resolution, idempotent `integration_operations` |
 | `engagement/` | Q&A threads (private), feedback submission, engagement events, topic insights with cohort suppression, author feedback |
-| `sources/` | Source records and chunks, extraction job enqueue, briefing-source links |
+| `sources/` | Source records and chunks, extraction job enqueue, briefing-source links; the private `SourceStore` (`store.ts` local filesystem, `s3-store.ts` S3-compatible, chosen by `getSourceStore()` from the environment). Keys are `<organizationId>/<sha256>` (validated by `parseSourceKey`, shared by both adapters); `get(organizationId, key)` refuses another tenant's key and verifies the hash. No route serves source bytes; they are read only by domain services and the extraction job after an access check |
 
 Rules: validate input with Zod at every exported function; return purpose-specific DTOs (never raw rows with draft-only fields to readers); write audit events for the actions in SECURITY_AND_PUBLICATION.md; enqueue jobs in the same transaction.
 
@@ -72,7 +89,7 @@ Document-internal ids are prefixed strings (`blk_`, `sec_`, `ev_`, `psp_`, `itm_
 | `/c/[company]/d/[department]` and `/t/[team]` below it | Department and team homes |
 | `/c/[company]/drafts` | My drafts |
 | `/c/[company]/b/[briefing]` | Reader, latest publication; `/v/[n]` pinned revision; `?perspective=psp_…` |
-| `/c/[company]/b/[briefing]/edit` | Minimal structured editor (draft) |
+| `/c/[company]/b/[briefing]/edit` | Structured editor (draft); Tiptap for RichText prose fields |
 | `/c/[company]/b/[briefing]/preview` | Reader preview + home/audience/evidence review + Publish |
 | `/c/[company]/b/[briefing]/history`, `/engagement`, `/access` | Author views |
 | `/c/[company]/new` | New brief (inherits home from `?department=&team=`) and import |

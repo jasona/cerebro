@@ -29,14 +29,14 @@ flowchart LR
 | Repository | npm workspaces; internal TypeScript-source packages consumed without a build step (T16) | One install and no per-package build pipeline; pnpm is not installed |
 | Application | Next.js, React, strict TypeScript 6.0.x (T17) | Server-rendered reader, interactive authoring, and server endpoints |
 | UI | Tailwind CSS, Radix primitives, Cerebro-owned components | Accessible foundations with a distinct visual system |
-| Editing | Structured block forms for minimal manual editing; Tiptap inside structured blocks for the deeper studio (T22) | Schema-first editing now; controlled rich text later |
+| Editing | Structured block forms; prose (`RichText`) fields use Tiptap trimmed to the RichText syntax: paragraphs, line breaks, bold, italic, http(s) links (T22, W3.4) | Schema-first editing; the stored and published format stays the RichText string |
 | Validation | Zod | Runtime contracts for requests, documents, and AI output |
 | Persistence | PostgreSQL, Drizzle, SQL migrations; PGlite when `DATABASE_URL` is unset, node-postgres otherwise (T18) | Relational integrity with JSONB content snapshots; repeatable local setup |
 | Retrieval | PostgreSQL full-text search first; optional pgvector column populated only when an embedding provider is configured (T20) | Authorized evidence retrieval without a separate search service or a required embedding vendor |
 | Authentication | Dev identity adapter locally and in tests; Clerk in production (D08) | Local work without a vendor; hosted authentication in production |
 | Authorization | Cerebro-owned organization and briefing policies; see [ACCESS_MATRIX.md](ACCESS_MATRIX.md) | Explicit, portable product permissions |
 | AI transport | Task interfaces with a deterministic local provider by default; AI SDK adapter with an injected model (T19) | No live model needed for reading, publishing, or tests; no vendor selected |
-| Incoming LLM integration | Remote MCP adapter using `@modelcontextprotocol/sdk` over Streamable HTTP at `/api/mcp` (T21); MCP Apps UI deferred (T14) | Create, preview, publish, and update from a supported LLM host |
+| Incoming LLM integration | Remote MCP adapter using `@modelcontextprotocol/sdk` over Streamable HTTP at `/api/mcp` (T21), an OAuth 2.1 protected resource with per-tool scopes (T13, D08); MCP Apps inline preview for hosts that support it (T14) | Create, preview, publish, and update from a supported LLM host |
 | Delegated authorization | Connection tokens locally; established MCP-compatible OAuth authorization server in production, with Clerk OAuth/MCP as the first candidate pending verification (D08) | Account linking and bounded client access |
 | Jobs | Node.js worker and a Cerebro-owned PostgreSQL `jobs` table claimed with `FOR UPDATE SKIP LOCKED` (T07) | Transactional enqueue in domain transactions; identical behavior on PGlite and PostgreSQL |
 | Assets | Private S3-compatible storage | Source files and derived assets |

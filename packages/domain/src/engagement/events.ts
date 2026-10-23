@@ -7,6 +7,7 @@ import { recordAudit } from "../audit";
 import { RequestContext } from "../context";
 import { DomainError } from "../errors";
 import { dedupeKeys } from "../jobs/kinds";
+import { log } from "../ops/log";
 import { revisionNumbers } from "./feedback";
 import { documentTargets, loadLatestInsights, resolveReadableRevision } from "./revision";
 import { ENGAGEMENT_DISCLOSURE, ENGAGEMENT_LABELS, ENGAGEMENT_SETTINGS } from "./settings";
@@ -24,7 +25,7 @@ function pseudonymSecret(): string {
   if (s) return s;
   if (!warnedSecret && process.env.NODE_ENV === "production") {
     warnedSecret = true;
-    console.warn(JSON.stringify({ level: "warn", msg: "engagement pseudonym secret not configured; using dev default" }));
+    log.warn("config.default_secret", { component: "engagement", detail: "engagement pseudonym secret not configured; using dev default" });
   }
   return "cerebro-dev-engagement-pseudonym";
 }
@@ -141,7 +142,9 @@ export interface EngagementSummaryDto {
   topics: {
     label: typeof ENGAGEMENT_LABELS.generated;
     items: { revisionNumber: number | null; topic: string; questionCount: number; readerCount: number; generatedAt: string }[];
-    suppressedQuestionCount: number;
+    /** Questions withheld from topics; null (and `suppressedQuestionCountSuppressed`) below the cohort threshold. */
+    suppressedQuestionCount: number | null;
+    suppressedQuestionCountSuppressed: boolean;
   };
   minCohort: number;
   disclosure: string;
@@ -254,6 +257,7 @@ export async function getEngagementSummary(db: Database, ctx: RequestContext, br
           generatedAt: t.generatedAt,
         })),
         suppressedQuestionCount: insights.suppressedQuestionCount,
+        suppressedQuestionCountSuppressed: insights.suppressedQuestionCountSuppressed,
       },
       minCohort: min,
       disclosure: ENGAGEMENT_DISCLOSURE,
@@ -280,11 +284,16 @@ export async function requestTopicSummary(
   return withAuthContext(db, authOf(c), async (tx) => {
     await assertBriefingCapability(tx, c, briefingId, "view_engagement");
     const rev = await resolveReadableRevision(tx, c, briefingId, opts.revisionNumber);
-    const n = await tx.execute<{ n: number }>(sql`
-      select count(*)::int as n
+    const n = await tx.execute<{ n: number; readers: number }>(sql`
+      select count(*)::int as n, count(distinct t.reader_id)::int as readers
       from qa_messages m join qa_threads t on t.organization_id = m.organization_id and t.id = m.thread_id
       where m.organization_id = ${c.organizationId}::uuid and t.revision_id = ${rev.revisionId}::uuid and m.role = 'reader'`);
-    const count = n.rows[0]?.n ?? 0;
+    // The dedupe key (and so `created`) must not reveal small-cohort activity
+    // (D07): below the cohort threshold every request maps to one key, so a
+    // new question from one or two readers does not make a new job. At or
+    // above it, the question count is already disclosed by the summary.
+    const readers = n.rows[0]?.readers ?? 0;
+    const count = readers >= ENGAGEMENT_SETTINGS.minCohort ? (n.rows[0]?.n ?? 0) : "below_cohort";
     const job = await enqueueJob(tx, {
       organizationId: c.organizationId,
       kind: "summarize_topics",

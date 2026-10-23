@@ -80,7 +80,7 @@ Per D04, sharing requires authentication and an applicable grant or explicitly p
 - Tokens are high entropy, stored as hashes, and support expiry and revocation.
 - Link revocation and grant revocation are distinct operations and must be communicated clearly. Revoking a link does not silently remove unrelated direct grants.
 - Original source files require separate authorization. Evidence citations expose only approved excerpts by default.
-- Assets use private storage and short-lived signed access where appropriate.
+- Assets use private storage and short-lived signed access where appropriate. Implemented today: source bytes live in a private local or S3-compatible store under `<organizationId>/<sha256>` keys; the store refuses another tenant's key, verifies the hash on read, never sets ACLs, and no route serves bytes directly (no signed URLs are minted). Any future byte-serving route must check domain access first and may only then mint a short-lived signed URL.
 
 Authorization cannot retract information already downloaded by a reader. Expiration and revocation govern subsequent system access.
 
@@ -90,9 +90,11 @@ Per D07, reader Q&A transcripts are private to the asker, while disclosed aggreg
 
 `briefing_reads` is a private per-user reading-state record (last opened revision and time per briefing) used only for the reader's own "Unread" / "New version" library badges. Row-level security limits every row to its own user within the organization, so authors, publishers and admins cannot read it; no engagement summary, insight or author view uses it, and it does not weaken the pseudonymous session keying of `engagement_events`.
 
-Telemetry should use minimal payloads and pseudonymous session identifiers where feasible. Topic summaries and per-revision activity counts use cohort suppression: each is withheld unless it draws on at least 3 distinct readers, a provisional implementation setting. Cerebro computes distinct readers itself and never trusts a provider's count. Identifying content needs careful handling even above that threshold. Product reporting must distinguish observations from inferred interpretations.
+Telemetry should use minimal payloads and pseudonymous session identifiers where feasible. Topic summaries and per-revision activity counts use cohort suppression: each is withheld unless it draws on at least 3 distinct readers, a provisional implementation setting. Cerebro computes distinct readers itself and never trusts a provider's count. The count of questions withheld from topic summaries is itself suppressed unless those questions come from at least that many distinct readers, and a topic-summary request does not reveal whether a small cohort asked new questions. Rate-limit counters are private to their user. Identifying content needs careful handling even above that threshold. Product reporting must distinguish observations from inferred interpretations.
 
 Set retention for originals, approved evidence, Q&A, feedback, telemetry, audit records, and backups before handling pilot data. Published immutability describes normal editing behavior; it does not override the agreed retention policy.
+
+No retention period is set yet (P11). The implemented mechanism keeps everything by default: per-organization periods for private sources, Q&A conversations and measured events can be set by owners/admins, and an audited `apply_retention` job then deletes expired data with its derived chunks, embeddings, citations, draft-side copies and stored objects. Published revision evidence keeps its approved excerpt and loses only its link to a deleted source. Authors, and owners/admins as the privileged erasure path, can hard-delete a source. Audit events, published revisions, approved evidence, submitted feedback and backups are outside this mechanism until P11 decides them.
 
 ## Audit scope
 

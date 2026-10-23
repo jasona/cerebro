@@ -11,7 +11,7 @@ type Start = "blank" | "markdown" | "handoff" | "upload";
 const STARTS: { value: Start; label: string; hint: string }[] = [
   { value: "blank", label: "Blank", hint: "A minimal structure with every required field marked as not yet stated." },
   { value: "markdown", label: "Paste Markdown", hint: "Headings become sections; we flag anything missing instead of inventing it." },
-  { value: "upload", label: "Upload a file", hint: "PDF, Word (.docx), PowerPoint (.pptx), Markdown or text. Kept private as a source." },
+  { value: "upload", label: "Upload a file", hint: "PDF, Word (.docx), PowerPoint (.pptx), Markdown, text, or an image (PNG, JPEG, WebP). Kept private as a source." },
   { value: "handoff", label: "Paste a handoff (advanced)", hint: "A structured JSON handoff package from a connected LLM." },
 ];
 
@@ -106,12 +106,13 @@ export function NewBriefForm({ company, homeOptions, defaultHome, audienceOption
               name="file"
               type="file"
               required
-              accept=".pdf,.docx,.pptx,.md,.markdown,.txt,application/pdf,text/plain,text/markdown"
+              accept=".pdf,.docx,.pptx,.md,.markdown,.txt,.png,.jpg,.jpeg,.webp,application/pdf,text/plain,text/markdown,image/png,image/jpeg,image/webp"
               aria-describedby="new-file-hint"
               className="rounded-md border border-line-strong bg-surface px-3 py-2 text-sm"
             />
             <p id="new-file-hint" className="text-sm text-muted">
               The file stays private to collaborators. Text extraction runs in the background; you'll see its status and any gaps in the editor.
+              Images and scanned PDF pages are machine-read (OCR), so check that text against the original.
             </p>
           </div>
         ) : null}

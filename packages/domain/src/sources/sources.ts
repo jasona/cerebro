@@ -1,5 +1,5 @@
 import { newId } from "@cerebro/briefing-schema";
-import { SOURCE_KINDS as CAPTURE_KINDS, validateUpload, type SourceKind as CaptureKind } from "@cerebro/capture";
+import { SOURCE_KINDS as CAPTURE_KINDS, imageFormat, validateUpload, type SourceKind as CaptureKind } from "@cerebro/capture";
 import {
   auditEvents,
   briefingSources,
@@ -9,6 +9,7 @@ import {
   withAuthContext,
   type Database,
   type Executor,
+  type Tx,
 } from "@cerebro/database";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
@@ -18,7 +19,8 @@ import { loadDraftRow, parseStoredDraft, updateDraftInTx } from "../briefings/dr
 import { RequestContext } from "../context";
 import { DomainError } from "../errors";
 import { dedupeKeys } from "../jobs/kinds";
-import { getSourceStore, sha256Hex } from "./store";
+import { enforceRateLimit } from "../ops/rate-limit";
+import { getSourceStore, sha256Hex, sourceKeyFor } from "./store";
 
 // ---------------------------------------------------------------------------
 // Capture kind <-> stored mime type
@@ -35,9 +37,23 @@ export const CAPTURE_MIME: Record<CaptureKind, string> = {
   pdf: "application/pdf",
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  /** Images are stored with their actual type (see `mimeForCapture`); read by OCR. */
+  image: "image/png",
 };
 
+const IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/webp"]);
+
+/** Stored mime type for a validated source: images keep their real format (from magic bytes). */
+export function mimeForCapture(kind: CaptureKind, bytes?: Uint8Array): string {
+  if (kind === "image" && bytes) {
+    const format = imageFormat(bytes);
+    if (format) return `image/${format}`;
+  }
+  return CAPTURE_MIME[kind];
+}
+
 export function captureKindFromMime(mime: string | null): CaptureKind | null {
+  if (mime && IMAGE_MIMES.has(mime)) return "image";
   for (const [kind, m] of Object.entries(CAPTURE_MIME) as [CaptureKind, string][]) if (m === mime) return kind;
   return null;
 }
@@ -85,6 +101,17 @@ export interface AddSourceResult {
 }
 
 /**
+ * Serialize work on one content-addressed object within the transaction:
+ * storing it for a new source (addSource) and deleting it once no source
+ * references it (source deletion and retention). Without this, an upload of
+ * the same bytes that commits between the deletion's reference check and the
+ * object removal would be left pointing at a deleted object.
+ */
+export async function lockSourceObject(tx: Tx, objectKey: string): Promise<void> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`cerebro:source-object:${objectKey}`}, 0))`);
+}
+
+/**
  * Store a private source and enqueue extraction. Requires `edit` on the
  * briefing when attached to one; otherwise an active company membership.
  * Bytes go to the private SourceStore (content-addressed, immutable); text is
@@ -103,6 +130,7 @@ export async function addSource(db: Database, ctx: RequestContext, raw: AddSourc
     ...(input.filename ? { filename: input.filename } : {}),
   });
   if (!valid.ok) throw new DomainError("validation", valid.error.message, { code: valid.error.code });
+  await enforceRateLimit(db, c, "upload");
 
   return withAuthContext(db, { userId: c.userId, organizationId: c.organizationId, connectionId: c.connectionId }, async (tx) => {
     if (input.briefingId) await assertBriefingCapability(tx, c, input.briefingId, "edit");
@@ -113,6 +141,8 @@ export async function addSource(db: Database, ctx: RequestContext, raw: AddSourc
     let digest: string;
     let byteSize: number;
     if (input.bytes !== undefined) {
+      // Held until commit, so a concurrent deletion of the same object waits for this row.
+      await lockSourceObject(tx, sourceKeyFor(c.organizationId, input.bytes).key);
       const stored = await getSourceStore().put(c.organizationId, input.bytes);
       objectKey = stored.key;
       digest = stored.sha256;
@@ -133,7 +163,7 @@ export async function addSource(db: Database, ctx: RequestContext, raw: AddSourc
         title: input.title ?? input.filename ?? "Untitled source",
         objectKey,
         textContent,
-        mimeType: CAPTURE_MIME[input.kind],
+        mimeType: mimeForCapture(input.kind, input.bytes),
         byteSize,
         checksum,
         extractionStatus: "pending",

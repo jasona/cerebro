@@ -20,11 +20,32 @@ export interface CaptureLimits {
   /** Chunking. */
   targetChunkCharacters: number;
   maxChunkCharacters: number;
+  /** Images: largest decoded size accepted at upload (width × height), checked from the header before decoding. */
+  maxImagePixels: number;
+  /** Images: largest width or height accepted at upload. */
+  maxImageDimension: number;
+  /** OCR: images and rendered PDF pages are scaled down to at most this many pixels before recognition. */
+  maxOcrPixels: number;
+  /** OCR: most PDF pages read by OCR per source; later scanned pages are reported as gaps. */
+  maxOcrPages: number;
+  /** OCR: resolution PDF pages are rendered at (reduced to fit `maxOcrPixels`). */
+  ocrRenderDpi: number;
+  /** OCR: a PDF page that cannot be rendered at this resolution within `maxOcrPixels` is not OCR-read. */
+  minOcrRenderDpi: number;
+  /** OCR: a PDF page whose text layer has fewer non-space characters than this is OCR-read. */
+  minTextLayerCharacters: number;
+  /** OCR: lines with recogniser confidence (0–100) below this are left out and reported as a gap. */
+  minOcrLineConfidence: number;
+  /** OCR: time allowed for one page or image. */
+  ocrPageTimeoutMs: number;
+  /** OCR: time allowed for all OCR in one source (well inside the job claim's stale timeout). */
+  ocrTotalTimeoutMs: number;
 }
 
 /**
- * Default limits. These are engineering defaults for safety, not agreed product
- * targets; callers may tighten them via `ExtractOptions.limits`.
+ * Default limits. These are engineering defaults for safety (provisional
+ * implementation settings), not agreed product targets; callers may tighten
+ * them via `ExtractOptions.limits`.
  */
 export const CAPTURE_LIMITS: Readonly<CaptureLimits> = Object.freeze({
   maxBytes: 20 * 1024 * 1024,
@@ -40,6 +61,16 @@ export const CAPTURE_LIMITS: Readonly<CaptureLimits> = Object.freeze({
   ratioCheckMinBytes: 1024 * 1024,
   targetChunkCharacters: 1_200,
   maxChunkCharacters: 1_600,
+  maxImagePixels: 50_000_000,
+  maxImageDimension: 20_000,
+  maxOcrPixels: 16_000_000,
+  maxOcrPages: 50,
+  ocrRenderDpi: 200,
+  minOcrRenderDpi: 100,
+  minTextLayerCharacters: 20,
+  minOcrLineConfidence: 60,
+  ocrPageTimeoutMs: 60_000,
+  ocrTotalTimeoutMs: 240_000,
 });
 
 export function resolveLimits(overrides?: Partial<CaptureLimits>): CaptureLimits {

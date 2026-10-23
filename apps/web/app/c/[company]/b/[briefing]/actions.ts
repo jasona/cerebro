@@ -41,7 +41,11 @@ export async function askAction(input: AskInput): Promise<AskOutcome> {
       if (err.code === "conflict" && reason === "thread_revision_mismatch") {
         return { ok: false, code: err.code, message: "That conversation belongs to a different version.", threadMismatch: true };
       }
-      return { ok: false, code: err.code, message: err.code === "validation" ? "Enter a question of up to 2,000 characters." : errorMessage(err.code) };
+      return {
+        ok: false,
+        code: err.code,
+        message: err.code === "validation" ? "Enter a question of up to 2,000 characters." : errorMessage(err.code, err.details),
+      };
     }
     throw err;
   }

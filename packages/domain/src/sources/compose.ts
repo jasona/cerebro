@@ -228,7 +228,7 @@ export async function composeDraftFromSource(
       );
     }
 
-    const baseTitle = src.title.replace(/\.(pdf|docx|pptx|md|markdown|txt)$/i, "").trim() || "Source";
+    const baseTitle = src.title.replace(/\.(pdf|docx|pptx|md|markdown|txt|png|jpe?g|webp)$/i, "").trim() || "Source";
     const title = isGapPlaceholder(current.title) ? baseTitle : current.title;
     const groups = groupChunks(textChunks, baseTitle);
 
@@ -295,6 +295,9 @@ export async function composeDraftFromSource(
       ...composed.gaps.filter((g) => !g.startsWith("No evidence excerpts were supplied")),
       ...extraGaps,
       ...(meta.completeness === "partial" ? ["The source was only partially extracted; some content may be missing. Check the extraction gaps."] : []),
+      ...(textChunks.some((ch) => ch.locator?.includes("(OCR,"))
+        ? ["Some passages were machine-read by OCR (marked \"OCR\" in their locators) and may contain recognition errors. Check them against the original."]
+        : []),
       "Passages were added as candidate evidence. Review and approve the ones that support your claims before publishing.",
     ];
 

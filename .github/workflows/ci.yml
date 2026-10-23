@@ -1,0 +1,150 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NEXT_TELEMETRY_DISABLED: "1"
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+
+  # Vitest on embedded PGlite (the default) and on a PostgreSQL server
+  # (TEST_DATABASE_URL: each test database is created from a migrated template).
+  unit:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        database: [pglite, postgres]
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      TEST_DATABASE_URL: ${{ matrix.database == 'postgres' && 'postgres://postgres:postgres@localhost:5432/postgres' || '' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run
+
+  # The database CLI against PostgreSQL: reset (drop, migrate, seed), then
+  # migrate again, which must be a no-op.
+  db-cli:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: cerebro
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/cerebro
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run db:reset
+      - name: db:migrate is idempotent
+        run: npm run db:migrate | tee migrate.log && grep -q "Database is up to date (postgres)" migrate.log
+
+  # Playwright journeys. pglite: the config starts `next dev` on a fresh PGlite
+  # database and jobs run in-process. postgres: the web app and a separate
+  # worker process share one PostgreSQL database.
+  e2e:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        database: [pglite, postgres]
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: cerebro
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      E2E_PORT: "3400"
+      AUTH_MODE: dev
+      APP_URL: http://localhost:3400
+      CEREBRO_OBJECTS_DIR: ${{ github.workspace }}/.data/objects-e2e
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Install Playwright Chromium
+        run: |
+          npx playwright install --with-deps chromium
+          echo "PLAYWRIGHT_CHROMIUM_PATH=$(node -e 'import("@playwright/test").then((p) => console.log(p.chromium.executablePath()))')" >> "$GITHUB_ENV"
+      - name: Run journeys (PGlite)
+        if: matrix.database == 'pglite'
+        run: npx playwright test
+      - name: Run journeys (PostgreSQL, separate worker)
+        if: matrix.database == 'postgres'
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/cerebro
+          E2E_EXTERNAL_SERVER: "1"
+        run: |
+          npm run db:reset
+          npm exec -w @cerebro/web -- next dev -p "$E2E_PORT" > web.log 2>&1 &
+          npm run worker > worker.log 2>&1 &
+          curl --fail --silent --output /dev/null --retry 120 --retry-delay 2 --retry-all-errors \
+            "http://localhost:$E2E_PORT/dev/sign-in"
+          npx playwright test
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report-${{ matrix.database }}
+          path: |
+            playwright-report/
+            test-results/
+            web.log
+            worker.log
+          if-no-files-found: ignore

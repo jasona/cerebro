@@ -2,10 +2,12 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    include: ["packages/*/src/**/*.test.ts", "packages/*/src/**/*.test.tsx", "packages/*/test/**/*.test.ts", "apps/*/src/**/*.test.ts", "apps/worker/test/**/*.test.ts"],
+    include: ["packages/*/src/**/*.test.ts", "packages/*/src/**/*.test.tsx", "packages/*/test/**/*.test.ts", "apps/*/src/**/*.test.ts", "apps/worker/test/**/*.test.ts", "apps/web/test/**/*.test.ts"],
     environment: "node",
     testTimeout: 60_000,
     hookTimeout: 60_000,
     pool: "forks",
+    // Structured operational logs (domain ops/log.ts) are muted in tests; log tests set their own level and sink.
+    env: { LOG_LEVEL: "silent" },
   },
 });
