@@ -32,7 +32,7 @@ Use the canonical briefing renderer and design tokens where host constraints per
 
 One explicit publication action should release the reviewed content and audience, subject to host policy. A stale draft or changed audience requires an updated preview; avoid redundant confirmations when nothing has changed. Missing evidence must remain visible rather than being hidden by a polished layout.
 
-Preview lists each evidence candidate with its attribution and an approve/exclude toggle in the first-party preview. Only approved excerpts publish. Embedded MCP Apps UI is deferred (T14); until then the connected host shows a structured summary and links to the first-party preview.
+Preview lists each evidence candidate with its attribution and an approve/exclude toggle in the first-party preview. Only approved excerpts publish. Hosts that support MCP Apps show an inline preview with a confirmed Publish control bound to the server-issued preview (T14); other hosts show a structured summary and link to the first-party preview. Evidence toggles stay in the first-party preview.
 
 ### Library
 
