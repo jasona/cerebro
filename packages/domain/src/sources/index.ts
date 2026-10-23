@@ -27,7 +27,7 @@ export {
   type ObjectStoreKind,
   type SourceStore,
 } from "./store";
-export { normalizePrefix, s3ConfigFromEnv, S3SourceStore, type S3SourceStoreConfig } from "./s3-store";
+export { ensureBucket, normalizePrefix, s3ConfigFromEnv, S3SourceStore, type S3SourceStoreConfig } from "./s3-store";
 export {
   composeDraftFromSource,
   ComposeDraftFromSourceInput,

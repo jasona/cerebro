@@ -38,7 +38,7 @@ export async function backupRoundTrip(open: () => Promise<DatabaseHandle>, targe
   await writeObject(target.objectsDir, KEY_A, "original bytes");
 
   const { dir, manifest } = await backupDatabase(target, backupDir);
-  expect(manifest.objects).toEqual({ files: 1, bytes: "original bytes".length });
+  expect(manifest.objects).toEqual({ files: 1, bytes: "original bytes".length, store: "local" });
   expect(manifest.migrations).toContain("0009_retention");
   expect(await readBackupManifest(dir)).toEqual(manifest);
   expect(await readFile(join(dir, "manifest.json"), "utf8")).not.toContain("Maya");
