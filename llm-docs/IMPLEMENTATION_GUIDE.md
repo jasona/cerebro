@@ -29,17 +29,14 @@ Dependencies are pre-installed at the root. **Do not run `npm install`** — if 
 | `AUTH_MODE` | `dev` (default locally) enables the dev identity adapter; `clerk` uses Clerk |
 | `SESSION_SECRET` | HMAC key for dev session cookies (dev default provided with a warning) |
 | `APP_URL` | Canonical base URL, default `http://localhost:3000` |
-<<<<<<< HEAD
 | `CEREBRO_OCR` | `off` disables OCR in extraction jobs (scanned pages and images are then reported as gaps). Default on |
 | `CEREBRO_OCR_LANGUAGES` | Comma-separated Tesseract language codes. Default `eng`; only English data is bundled |
 | `CEREBRO_OCR_LANG_PATH` | Local directory of `<lang>.traineddata.gz` files for other languages (never a URL; nothing is downloaded at runtime) |
 | `E2E_PORT` | Port for the Playwright dev server, default 3400 |
-=======
 | `CEREBRO_OBJECT_STORE` | Source byte store: `local` (default, `.data/objects` or `CEREBRO_OBJECTS_DIR`) or `s3` (any S3-compatible service). Unknown values fail at startup |
 | `CEREBRO_S3_ENDPOINT`, `CEREBRO_S3_REGION`, `CEREBRO_S3_BUCKET` | Required with `s3`; no provider endpoint or region is assumed. Startup (web `instrumentation.ts`, worker `main.ts`) fails fast, naming missing variables |
 | `CEREBRO_S3_FORCE_PATH_STYLE`, `CEREBRO_S3_PREFIX`, `CEREBRO_S3_SSE`, `CEREBRO_S3_SSE_KMS_KEY_ID` | Optional: path-style addressing (`true`/`false`), a key prefix, server-side encryption (`AES256` or `aws:kms` with an optional key id) |
 | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN` | S3 credentials (standard variables; both key variables or neither). Unset → the SDK default credential chain |
->>>>>>> worktree-agent-a85a0080b9acbbce6
 
 ## Data access contract
 
