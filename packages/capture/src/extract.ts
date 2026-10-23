@@ -2,10 +2,12 @@ import { z } from "zod";
 import { chunkSegments, type Segment } from "./chunk";
 import { extractDocx, OfficeOpenError } from "./formats/docx";
 import { parseConversation } from "./formats/conversation";
+import { extractImage, ImageOpenError } from "./formats/image";
 import { extractPdf, PdfOpenError } from "./formats/pdf";
 import { plainSegments } from "./formats/plain";
 import { extractPptx } from "./formats/pptx";
 import { resolveLimits, type CaptureLimits } from "./limits";
+import { OcrSession } from "./ocr";
 import { normalizeText } from "./text";
 import { SOURCE_KINDS, type ErrorCategory, type ExtractionGap, type ExtractionResult, type ExtractionStats, type ExtractOptions, type ExtractSourceInput } from "./types";
 import { validateUpload } from "./validate";
@@ -58,6 +60,10 @@ function decodeText(input: ExtractSourceInput): string {
  *   must not log `chunks[].text` either.
  * - Output is a private authoring resource. Chunks are not reader evidence until an
  *   author approves excerpts at publication.
+ * - OCR (scanned PDF pages, images) runs locally with bundled language data and
+ *   is CPU-heavy: call this only from the background extraction job, never from a
+ *   request handler. OCR text is marked in its locator ("p. 3 (OCR, 91% confidence)")
+ *   and by an `ocr_used` gap; OCR failures, timeouts and limits become gaps.
  */
 export async function extractSource(input: ExtractSourceInput, options: ExtractOptions = {}): Promise<ExtractionResult> {
   const parsed = ExtractSourceInputSchema.safeParse(input);
@@ -72,6 +78,7 @@ export async function extractSource(input: ExtractSourceInput, options: ExtractO
   let segments: Segment[] = [];
   const gaps: ExtractionGap[] = [];
   const stats: ExtractionStats = { characters: 0 };
+  const ocr = new OcrSession(options.ocr ?? {}, limits);
 
   try {
     switch (src.kind) {
@@ -97,10 +104,18 @@ export async function extractSource(input: ExtractSourceInput, options: ExtractO
         break;
       }
       case "pdf": {
-        const r = await extractPdf(src.bytes!, limits);
+        const r = await extractPdf(src.bytes!, limits, ocr);
         segments = r.segments;
         gaps.push(...r.gaps);
         stats.pages = r.pages;
+        if (r.ocrPages > 0) stats.ocrPages = r.ocrPages;
+        break;
+      }
+      case "image": {
+        const r = await extractImage(src.bytes!, limits, ocr);
+        segments = r.segments;
+        gaps.push(...r.gaps);
+        if (r.segments.length > 0) stats.ocrPages = 1;
         break;
       }
       case "docx": {
@@ -121,8 +136,11 @@ export async function extractSource(input: ExtractSourceInput, options: ExtractO
   } catch (err) {
     if (err instanceof PdfOpenError) return failed(err.category, err.message, gaps, stats);
     if (err instanceof OfficeOpenError) return failed(err.category, err.message, gaps, stats);
+    if (err instanceof ImageOpenError) return failed(err.category, err.message, gaps, stats);
     // Deliberately do not include the underlying error message: it may quote content.
     return failed("extraction_error", "The source could not be processed.", gaps, stats);
+  } finally {
+    await ocr.close();
   }
 
   const limited = applyCharacterLimit(segments, limits);
@@ -133,7 +151,10 @@ export async function extractSource(input: ExtractSourceInput, options: ExtractO
 
   const chunks = chunkSegments(limited.segments, chunking);
   if (chunks.length === 0) {
-    return failed("no_extractable_text", "No extractable text was found. Scanned documents and images require OCR, which is not supported.", gaps, stats);
+    const message = ocr.enabled
+      ? "No extractable text was found, including by OCR. See the gaps for each page."
+      : "No extractable text was found. Scanned pages and images need OCR, which is turned off.";
+    return failed("no_extractable_text", message, gaps, stats);
   }
   return { status: gaps.some((g) => g.affectsCompleteness) ? "partial" : "complete", chunks, gaps, stats };
 }

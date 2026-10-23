@@ -44,7 +44,7 @@ npm run worker         # background jobs (required with DATABASE_URL)
 1. **Library**: `/c/acme`. Shared company library, Department → Team tree, filters, search, My drafts.
 2. **Reader**: open "Our next chapter: a focused move upmarket". Try the perspective chips, evidence markers, "Ask about this" (grounded Q&A with citations, private by default), and "Respond to the author".
 3. **Author flow** (as Riley): Edit → Preview & publish → History (compare, withdraw) → Access (audience, grants, share links) → Engagement.
-4. **New brief**: `/c/acme/new` from blank, Markdown, a handoff JSON or an uploaded PDF/DOCX/PPTX.
+4. **New brief**: `/c/acme/new` from blank, Markdown, a handoff JSON or an uploaded PDF/DOCX/PPTX or image (PNG/JPEG/WebP, read by OCR in the background).
 5. **Send this to Cerebro (MCP)**: in Settings → Connections, create a development connection token, then:
 
    ```bash
@@ -73,6 +73,6 @@ packages/briefing-schema  Document schema, validation, diff, LLM handoff contrac
 packages/briefing-renderer Shared reader/preview renderer
 packages/ui            Design tokens and primitives
 packages/ai            Task interfaces, deterministic provider, answer validation, evaluation set
-packages/capture       Text/Markdown/PDF/DOCX/PPTX extraction with locators
+packages/capture       Text/Markdown/PDF/DOCX/PPTX extraction with locators; local OCR for scans and images
 packages/integrations  MCP server for LLM-native authoring
 ```

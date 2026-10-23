@@ -1,5 +1,5 @@
 import { newId } from "@cerebro/briefing-schema";
-import { SOURCE_KINDS as CAPTURE_KINDS, validateUpload, type SourceKind as CaptureKind } from "@cerebro/capture";
+import { SOURCE_KINDS as CAPTURE_KINDS, imageFormat, validateUpload, type SourceKind as CaptureKind } from "@cerebro/capture";
 import {
   auditEvents,
   briefingSources,
@@ -35,9 +35,23 @@ export const CAPTURE_MIME: Record<CaptureKind, string> = {
   pdf: "application/pdf",
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  /** Images are stored with their actual type (see `mimeForCapture`); read by OCR. */
+  image: "image/png",
 };
 
+const IMAGE_MIMES = new Set(["image/png", "image/jpeg", "image/webp"]);
+
+/** Stored mime type for a validated source: images keep their real format (from magic bytes). */
+export function mimeForCapture(kind: CaptureKind, bytes?: Uint8Array): string {
+  if (kind === "image" && bytes) {
+    const format = imageFormat(bytes);
+    if (format) return `image/${format}`;
+  }
+  return CAPTURE_MIME[kind];
+}
+
 export function captureKindFromMime(mime: string | null): CaptureKind | null {
+  if (mime && IMAGE_MIMES.has(mime)) return "image";
   for (const [kind, m] of Object.entries(CAPTURE_MIME) as [CaptureKind, string][]) if (m === mime) return kind;
   return null;
 }
@@ -133,7 +147,7 @@ export async function addSource(db: Database, ctx: RequestContext, raw: AddSourc
         title: input.title ?? input.filename ?? "Untitled source",
         objectKey,
         textContent,
-        mimeType: CAPTURE_MIME[input.kind],
+        mimeType: mimeForCapture(input.kind, input.bytes),
         byteSize,
         checksum,
         extractionStatus: "pending",

@@ -13,5 +13,5 @@ export {
   type InProcessJobRunnerOptions,
 } from "./runner";
 export { handleIndexRevision } from "./index-revision";
-export { handleExtractSource } from "./extract-source";
+export { handleExtractSource, ocrOptionsFromEnv } from "./extract-source";
 export { handleSummarizeTopics } from "./summarize-topics";

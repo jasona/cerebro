@@ -85,7 +85,10 @@ describe("detectKind", () => {
     expect(detectKind("notes.md")).toBe("markdown");
     expect(detectKind(undefined, "text/plain; charset=utf-8")).toBe("text");
     expect(detectKind("deck.PPTX")).toBe("pptx");
-    expect(detectKind("image.png")).toBeNull();
+    expect(detectKind("image.png")).toBe("image");
+    expect(detectKind("scan.JPG")).toBe("image");
+    expect(detectKind(undefined, "image/webp")).toBe("image");
+    expect(detectKind("sheet.xlsx")).toBeNull();
   });
 
   it("treats UTF-8 bytes as text unless named Markdown", () => {

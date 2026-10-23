@@ -16,6 +16,8 @@ export interface Segment {
   role?: MessageRole;
   speaker?: string;
   heading?: string;
+  /** Set when the text was machine-read by OCR: the recogniser's mean confidence (0–100). */
+  ocrConfidence?: number;
 }
 
 export interface ChunkingOptions {
@@ -89,7 +91,14 @@ export function locatorLabel(kind: LocatorKind, index: number, endIndex?: number
       return `Message ${index}`;
     case "line":
       return range ? `Lines ${index}–${endIndex}` : `Line ${index}`;
+    case "image":
+      return "Image";
   }
+}
+
+/** Label suffix for OCR-derived text, so authors see it was machine-read. */
+export function ocrLabel(label: string, confidence: number): string {
+  return `${label} (OCR, ${confidence}% confidence)`;
 }
 
 function buildLocator(first: Segment, last: Segment): Locator {
@@ -100,6 +109,10 @@ function buildLocator(first: Segment, last: Segment): Locator {
   if (first.part) locator.part = first.part;
   if (first.role) locator.role = first.role;
   if (first.speaker) locator.speaker = first.speaker;
+  if (first.ocrConfidence !== undefined) {
+    locator.ocr = { confidence: first.ocrConfidence };
+    locator.label = ocrLabel(locator.label, first.ocrConfidence);
+  }
   return locator;
 }
 
