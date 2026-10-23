@@ -40,16 +40,17 @@ export interface AnthropicTaskSettings {
  * measurement with `npm run ai:eval`, not agreed targets; each can be
  * overridden per task (`CEREBRO_AI_TASK_EFFORT`).
  *
- * - `answer`: medium. Reader Q&A is latency-bound (the domain answer timeout)
- *   but must stay grounded; on timeout the domain falls back to the local
- *   extractive answerer.
+ * - `answer`: low (D27). Reader Q&A is chat-like and latency-bound (the
+ *   domain answer timeout); grounding comes from the retrieved passages and
+ *   the domain's citation checks. On timeout the domain falls back to the
+ *   local extractive answerer.
  * - `summarize_topics`: low. Grouping short questions into labels; counts are
  *   recomputed by the domain layer anyway.
  * - `suggest_perspectives`, `propose_revision`, `compose`: medium. Proposals
  *   the author reviews; `max_tokens` leaves room for a full document.
  */
 export const ANTHROPIC_TASK_DEFAULTS: Readonly<Record<AiTaskName, AnthropicTaskSettings>> = Object.freeze({
-  answer: { effort: "medium", maxTokens: 8_000 },
+  answer: { effort: "low", maxTokens: 8_000 },
   summarize_topics: { effort: "low", maxTokens: 16_000 },
   suggest_perspectives: { effort: "medium", maxTokens: 16_000 },
   propose_revision: { effort: "medium", maxTokens: 32_000 },

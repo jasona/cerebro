@@ -63,6 +63,22 @@ Full file-format extraction, richer evidence selection, and AI-suggested perspec
 
 **Exit gate:** Pilot audience, hosting region, provider policy, production delegated authorization, retention, and analytics disclosure are approved. Measured readiness supports inviting real pilot users.
 
+### Pilot targets (provisional, D28)
+
+Set 2026-10-23 at the user's direction to decide on recommendations; revise from pilot baselines. Analytics measure behavior, not comprehension (principle 8).
+
+| Area | Target | Measured by |
+| --- | --- | --- |
+| Library list, reader open, preview | p95 ≤ 500 ms server time | `npm run perf` against production-like PostgreSQL; server logs |
+| Publish | p95 ≤ 1 s | `npm run perf` |
+| Reader Q&A | p95 ≤ 15 s end to end (the answer timeout); fallback to the offline answerer on ≤ 5% of questions | `ai_runs` latency and error categories |
+| AI quality | All `npm run ai:eval` answer cases pass with Claude; 0 safety failures | `npm run ai:eval` |
+| Isolation | No cross-tenant or unauthorized-access findings | Security tests in CI; pilot incident log |
+| Availability | `/api/ready` healthy during pilot business hours, outages explained | Coolify health checks |
+| Proof 1: connected authoring | At least 3 briefs drafted in a connected LLM and published by an executive | Audit events (`publication.published` via MCP) |
+| Proof 2: discovery | At least 70% of each pilot brief's audience opens it within 14 days | Reader opens (`briefing_reads`), cohort-suppressed |
+| Proof 3: revision from feedback | At least 1 revision published in response to submitted feedback | Feedback resolution linked to a revision |
+
 ## Dependency chain
 
 ```mermaid

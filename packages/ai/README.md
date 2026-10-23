@@ -98,7 +98,7 @@ with `npm run ai:eval`, not agreed targets):
 
 | Task | Effort | `max_tokens` (thinking + reply) |
 | --- | --- | --- |
-| `answer` | `medium` | 8,000 |
+| `answer` | `low` (D27) | 8,000 |
 | `summarize_topics` | `low` | 16,000 |
 | `suggest_perspectives` | `medium` | 16,000 |
 | `propose_revision` | `medium` | 32,000 |

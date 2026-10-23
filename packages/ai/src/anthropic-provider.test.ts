@@ -101,7 +101,7 @@ describe("AnthropicProvider request shape", () => {
     const { body, options } = calls[0]!;
     expect(body.model).toBe("claude-opus-5-5");
     for (const key of ["temperature", "top_p", "top_k", "thinking", "tool_choice", "tools"]) expect(body).not.toHaveProperty(key);
-    expect(body.output_config?.effort).toBe("medium");
+    expect(body.output_config?.effort).toBe("low");
     expect(body.output_config?.format).toEqual({ type: "json_schema", schema: structuredOutputSchema(AnswerTask.output) });
     expect(body.betas).toEqual([ANTHROPIC_FALLBACK_BETA]);
     expect(body.betas).toEqual(["server-side-fallback-2026-07-01"]);

@@ -23,7 +23,7 @@ Status key:
 
 ## W0 Decisions for the user
 
-Settled on 2026-10-23: the AI provider (D12), MCP OAuth (D13), hosting (D14), admin self-add (D15), withdrawal (D16), the cohort minimum (D17), default retention (D18), the architecture review of the adopted decisions (D19), the open product proposals with Claude as the first host (D20), limits off for the pilot (D21), pilot targets set after first usage (D22), full-text search with no embedding vendor (D23), and retention covering sources, Q&A and events only (D24).
+Settled on 2026-10-23: the AI provider (D12), MCP OAuth (D13), hosting (D14), admin self-add (D15), withdrawal (D16), the cohort minimum (D17), default retention (D18), the architecture review of the adopted decisions (D19), the open product proposals with Claude as the first host (D20), limits off for the pilot (D21), pilot targets set after first usage (D22), full-text search with no embedding vendor (D23), retention covering sources, Q&A and events only (D24), SeaweedFS storage in the Coolify stack (D25), nightly backups with 14 kept and an off-site copy (D26), `low` Claude effort for reader answers (D27), and provisional pilot targets (D28).
 
 What remains needs the user's credentials, infrastructure or later data:
 
@@ -31,8 +31,8 @@ What remains needs the user's credentials, infrastructure or later data:
 | --- | --- | --- |
 | Anthropic API key | Provide a key; then run `npm run ai:live` and `npm run ai:eval`, and check answer latency against the 15-second answer timeout | Live verification of D12 |
 | Clerk instance | Provide keys and apply the instance settings in `packages/integrations/README.md` (including `aud_claim_enabled` through Clerk's API) | Live verification of D13, web sign-in |
-| Coolify instance | Deploy with `deploy/coolify/README.md`, choose the S3-compatible storage service, and schedule backups with off-site copies | Live verification of D14 |
-| Pilot targets | Agree latency, AI evaluation and adoption targets from pilot baselines (D22) | Pilot exit gates |
+| Coolify instance | Deploy with `deploy/coolify/README.md` (storage is SeaweedFS in-stack, D25; backups nightly, D26) and set the off-site backup destination | Live verification of D14 |
+| Pilot targets | **Provisional targets set (D28)** in MVP_PLAN.md; revise from pilot baselines | Final pilot exit gates |
 
 ## W1 Housekeeping — Done
 
