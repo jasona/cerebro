@@ -37,7 +37,7 @@ flowchart LR
 | Authorization | Cerebro-owned organization and briefing policies; see [ACCESS_MATRIX.md](ACCESS_MATRIX.md) | Explicit, portable product permissions |
 | AI transport | Task interfaces with a deterministic local provider by default; AI SDK adapter with an injected model (T19) | No live model needed for reading, publishing, or tests; no vendor selected |
 | Incoming LLM integration | Remote MCP adapter using `@modelcontextprotocol/sdk` over Streamable HTTP at `/api/mcp` (T21), an OAuth 2.1 protected resource with per-tool scopes (T13, D08); MCP Apps inline preview for hosts that support it (T14) | Create, preview, publish, and update from a supported LLM host |
-| Delegated authorization | Connection tokens locally; established MCP-compatible OAuth authorization server in production, with Clerk OAuth/MCP as the first candidate pending verification (D08) | Account linking and bounded client access |
+| Delegated authorization | Connection tokens locally; Clerk as the MCP OAuth authorization server in production (D08, D13) | Account linking and bounded client access |
 | Jobs | Node.js worker and a Cerebro-owned PostgreSQL `jobs` table claimed with `FOR UPDATE SKIP LOCKED` (T07) | Transactional enqueue in domain transactions; identical behavior on PGlite and PostgreSQL |
 | Assets | Private S3-compatible storage | Source files and derived assets |
 | Testing | Vitest, Playwright, database integration tests | Domain, security, and journey verification |

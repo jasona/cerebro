@@ -1,0 +1,12 @@
+-- OAuth connections reconnected from Settings (D13, Clerk).
+--
+-- Clerk access tokens carry no `auth_time`, so a token minted from a revoked
+-- grant's refresh token cannot be told apart from a fresh authorization and a
+-- revoked Clerk grant stays refused. The user can reconnect a revoked grant
+-- explicitly from Settings → Connections (an audited action in their own web
+-- session). That reactivates the connection and sets:
+--   issued_after  tokens whose `iat` is not after this instant are refused,
+--                 so every access token issued before the reconnection,
+--                 including any obtained while the grant was revoked, stays
+--                 refused for the rest of its lifetime.
+alter table integration_connections add column issued_after timestamptz;

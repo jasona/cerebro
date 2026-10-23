@@ -12,11 +12,14 @@ export {
 export { handleMcpHttpRequest, type McpHttpOptions } from "./http";
 export {
   MCP_PATH,
+  OAUTH_PROFILES,
   oauthConfig,
+  OAuthConfigError,
   PROTECTED_RESOURCE_METADATA_PATH,
   protectedResourceMetadata,
   protectedResourceMetadataResponse,
   verifyAccessToken,
+  type OAuthProfile,
   type OAuthResourceConfig,
   type VerifiedAccessToken,
   type VerifyOptions,

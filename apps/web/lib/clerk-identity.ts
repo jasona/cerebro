@@ -1,6 +1,6 @@
 import "server-only";
 import type { Database } from "@cerebro/database";
-import { findUserByIdentity, resolveWebIdentity, type IdentityUser, type WebIdentityResult } from "@cerebro/domain";
+import { createLogger, findUserByIdentity, resolveWebIdentity, type IdentityUser, type WebIdentityResult } from "@cerebro/domain";
 
 /**
  * Clerk web identity (D08, AUTH_MODE=clerk). Clerk authenticates; Cerebro
@@ -44,6 +44,24 @@ function displayNameOf(profile: ClerkProfile, email: string): string {
   return (full.trim() || profile.username?.trim() || email.split("@")[0] || email).slice(0, 120);
 }
 
+const logger = createLogger({ component: "clerk-identity" });
+let issuerChecked = false;
+
+/**
+ * MCP OAuth through Clerk (D13) finds users by the same identity link: the
+ * access token's `iss` must equal this session's `iss` (Clerk's Frontend API
+ * URL). A different CEREBRO_OAUTH_ISSUER would refuse every MCP connection
+ * as "not linked", so say so once in the log. Both values are public URLs.
+ */
+function warnOnIssuerMismatch(sessionIssuer: string): void {
+  if (issuerChecked) return;
+  issuerChecked = true;
+  const oauthIssuer = process.env.CEREBRO_OAUTH_ISSUER?.trim();
+  if (oauthIssuer && oauthIssuer !== sessionIssuer && (process.env.CEREBRO_OAUTH_PROFILE?.trim().toLowerCase() || "clerk") === "clerk") {
+    logger.warn("oauth.issuer_mismatch", { sessionIssuer, oauthIssuer });
+  }
+}
+
 /** Resolve the current Clerk session to a Cerebro user (provisioning on first sign-in per the rules above). */
 export async function resolveClerkSession(db: Database): Promise<ClerkSessionState> {
   const { auth, currentUser } = await import("@clerk/nextjs/server");
@@ -52,6 +70,7 @@ export async function resolveClerkSession(db: Database): Promise<ClerkSessionSta
   const iss = session.sessionClaims?.iss;
   if (typeof iss !== "string" || !iss) return { user: null, reason: "missing_issuer" };
   const key = { issuer: iss, subject: session.userId };
+  warnOnIssuerMismatch(iss);
 
   const linked = await findUserByIdentity(db, key);
   if (linked) return { user: linked };

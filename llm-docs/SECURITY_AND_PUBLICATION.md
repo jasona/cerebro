@@ -62,7 +62,7 @@ Withdrawal removes reader availability without rewriting the content snapshot. W
 
 ## Connected account lifecycle
 
-Per D08, production uses an established OAuth authorization server compatible with the chosen MCP hosts. Clerk's OAuth/MCP support is the first candidate; verification is pending. Web login and MCP authorization are distinct integration concerns.
+Per D08 and D13, production uses Clerk as the MCP OAuth authorization server, the same instance as web sign-in. Clerk issues resource-bound JWT access tokens (`aud` from the RFC 8707 `resource`, with the instance setting `aud_claim_enabled`); Cerebro verifies them under its `clerk` profile and enforces revocation per request. Clerk tokens carry no `auth_time`, so a revoked grant comes back only through an explicit Reconnect in Settings, after which only newly issued tokens are accepted (see `LLM_INTEGRATION.md`). Web login and MCP authorization are distinct integration concerns.
 
 Local development and tests use connection tokens instead. They are high entropy, stored only as hashes, tied to an `integration_connections` row, created by the user in Settings, and revocable. They are a dev/test stand-in only, not the production delegated-authorization design, and production must not accept them in its place. Revoking the connection invalidates the token on the next request. The MCP adapter enforces this by authenticating every request; the domain records the connection for audit but does not recheck it (D10).
 

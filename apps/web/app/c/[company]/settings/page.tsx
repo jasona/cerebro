@@ -9,7 +9,7 @@ import { getRequestContext } from "@/lib/context";
 import { appUrl } from "@/lib/env";
 import { loadOrThrow } from "@/lib/errors";
 import { formatDateTime } from "@/lib/format";
-import { createConnectionTokenAction, revokeConnectionAction, savePreferencesAction } from "./actions";
+import { createConnectionTokenAction, reconnectConnectionAction, revokeConnectionAction, savePreferencesAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Settings" };
@@ -108,13 +108,33 @@ export default async function SettingsPage({ params }: { params: Promise<{ compa
           {revoked.length ? (
             <details className="mt-3 text-sm">
               <summary className="cursor-pointer text-muted">{revoked.length} revoked</summary>
-              <ul className="mt-2 flex flex-col gap-1 text-muted">
+              <ul className="mt-2 flex flex-col gap-2 text-muted">
                 {revoked.map((c) => (
-                  <li key={c.id}>
-                    {c.label} · revoked {c.revokedAt ? formatDateTime(c.revokedAt) : ""}
+                  <li key={c.id} className="flex flex-wrap items-center justify-between gap-3">
+                    <span>
+                      {c.label} · revoked {c.revokedAt ? formatDateTime(c.revokedAt) : ""}
+                    </span>
+                    {c.kind === "oauth" ? (
+                      <ActionForm
+                        action={reconnectConnectionAction}
+                        submitLabel="Reconnect"
+                        submitAriaLabel={`Reconnect connection ${c.label}`}
+                        submitVariant="secondary"
+                        submitSize="sm"
+                        quietSuccess
+                      >
+                        <Hidden fields={{ company: slug, connectionId: c.id }} />
+                      </ActionForm>
+                    ) : null}
                   </li>
                 ))}
               </ul>
+              {revoked.some((c) => c.kind === "oauth") ? (
+                <p className="mt-2 text-muted">
+                  Reconnect trusts this client again for your account, including sign-ins it already holds. Access
+                  tokens issued before you reconnect stay refused. Leave a connection revoked to keep that client out.
+                </p>
+              ) : null}
             </details>
           ) : null}
         </div>
