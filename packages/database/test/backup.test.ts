@@ -8,7 +8,7 @@ import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/pr
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { backupDatabase, pgConnectionForTool, restoreDatabase, runPgTool } from "../src/backup";
+import { backupDatabase, pgConnectionForTool, restoreDatabase, runPgTool, withoutExtensionEntries } from "../src/backup";
 import { createDatabase, migrate } from "../src/index";
 import { backupRoundTrip } from "./backup-helpers";
 
@@ -100,5 +100,26 @@ describe("Postgres tool invocation", () => {
     expect(err!.message).toContain("pg_dump");
     expect(err!.message).not.toContain("s3cr");
     expect(await readFile(seen, "utf8")).not.toContain("s3cr");
+  });
+});
+
+describe("Postgres restore list", () => {
+  it("skips only the extension entries, so a non-superuser owner can restore over a provisioned database", () => {
+    const list = [
+      ";",
+      "; Archive created at 2026-10-23 20:55:30 UTC",
+      "2; 3079 16386 EXTENSION - vector ",
+      "3588; 0 0 COMMENT - EXTENSION vector",
+      "229; 1259 16400 TABLE public briefings cerebro",
+      "3500; 0 16400 TABLE DATA public briefings cerebro",
+    ].join("\n");
+    expect(withoutExtensionEntries(list).split("\n")).toEqual([
+      ";",
+      "; Archive created at 2026-10-23 20:55:30 UTC",
+      ";2; 3079 16386 EXTENSION - vector ",
+      ";3588; 0 0 COMMENT - EXTENSION vector",
+      "229; 1259 16400 TABLE public briefings cerebro",
+      "3500; 0 16400 TABLE DATA public briefings cerebro",
+    ]);
   });
 });

@@ -11,6 +11,7 @@
     "@cerebro/database": "*",
     "@cerebro/briefing-schema": "*",
     "@cerebro/ai": "*",
-    "@cerebro/capture": "*"
+    "@cerebro/capture": "*",
+    "tsx": "^4.23.15"
   }
 }

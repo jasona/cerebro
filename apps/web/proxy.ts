@@ -12,7 +12,10 @@ import { clerkMiddlewareOptions, resolveAuthMode } from "./lib/auth-mode";
  *
  * The MCP endpoint and OAuth metadata skip Clerk: MCP requests carry their
  * own bearer credentials (OAuth access tokens or dev connection tokens),
- * which Clerk must not interpret as session tokens.
+ * which Clerk must not interpret as session tokens. The liveness and
+ * readiness probes skip Clerk too: they use no session (readiness details
+ * take their own `READINESS_TOKEN` bearer), and orchestrator health checks
+ * must not depend on Clerk keys or Clerk's availability.
  *
  * Clerk session tokens are accepted only when minted for the APP_URL origin
  * (`authorizedParties`, see auth-mode.ts).
@@ -23,7 +26,7 @@ import { clerkMiddlewareOptions, resolveAuthMode } from "./lib/auth-mode";
 type Handler = (req: NextRequest, ev: NextFetchEvent) => Promise<Response | undefined | void> | Response | undefined | void;
 let clerkHandler: Handler | undefined;
 
-const BYPASS_CLERK = /^\/(?:api\/mcp|\.well-known)(?:\/|$)/;
+const BYPASS_CLERK = /^\/(?:api\/mcp|api\/health|api\/ready|\.well-known)(?:\/|$)/;
 
 export async function proxy(req: NextRequest, ev: NextFetchEvent) {
   if (resolveAuthMode(process.env) !== "clerk" || BYPASS_CLERK.test(req.nextUrl.pathname)) return NextResponse.next();
